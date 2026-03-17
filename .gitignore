@@ -2,3 +2,7 @@ bin/
 lib/
 lib64
 pyvenv.cfg
+*__pycache__
+include/
+.vscode/
+share/
