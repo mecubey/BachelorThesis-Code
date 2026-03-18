@@ -34,6 +34,9 @@ class Task():
     def finished(self):
         return self.execution_progress >= self.execution_time
 
+    def requirements_met(self, traits):
+        return all(traits[i] >= self.requirement[i] for i in range(len(self.requirement)))
+
     def attr_dict(self):
         return {"position": self.position,
                 "requirement": self.requirement,

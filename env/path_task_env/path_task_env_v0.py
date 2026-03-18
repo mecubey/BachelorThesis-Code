@@ -1,13 +1,12 @@
 import numpy as np
-import pprint
 from .implementation.path_task_env import PathTaskEnv
 
-num_agents = 1
+num_agents = 2
 num_tasks = 6
-task_exc_time_limits = [1, 1]
+task_exc_time_limits = [1, 3]
 task_rwd_limits = [5, 10]
 trait_dim = 6
-episode_length = 300
+episode_length = 50
 field_dim = 3
 
 def env(render_mode = None, delay_btw_frames = 0, with_task_infos = False):
@@ -24,5 +23,5 @@ if __name__ == "__main__":
         actions = {agent: np.random.choice(observations[agent]["action_mask"].nonzero()[0]) for agent in path_task_env.agents}
         
         observations, rewards, terminations, truncations, infos = path_task_env.step(actions)
-    
+
     path_task_env.close()

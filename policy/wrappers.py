@@ -1,6 +1,5 @@
 import pettingzoo.utils
 import gymnasium as gym
-import pprint
 from sb3_contrib.common.maskable.policies import MaskableActorCriticPolicy
 from sb3_contrib.common.wrappers import ActionMasker
 from sb3_contrib import MaskablePPO
@@ -79,14 +78,13 @@ def train(env, save_path, steps=10_000, seed=None):
     env.close()
 
 
-def eval(env, policy_path, num_games=100):
-    # evaluate a trained
+def eval(env, policy_path, seed=None, num_games=100):
     # NOTE: Since we are evaluating, we will use our policy on a parallel enviroment.
     
     print("Starting evaluation of trained agent.")
 
     model = MaskablePPO.load(policy_path)
-    observations, infos = env.reset()
+    observations, infos = env.reset(seed)
     
     while env.agents:
         actions = {agent: model.predict(
@@ -96,6 +94,5 @@ def eval(env, policy_path, num_games=100):
                         )[0] for agent in env.agents}
         
         observations, rewards, terminations, truncations, infos = env.step(actions)
-        pprint.pprint(infos)
-
+    
     env.close()

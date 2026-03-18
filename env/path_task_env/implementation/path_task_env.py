@@ -124,7 +124,7 @@ class PathTaskEnv(ParallelEnv):
         rewards = {a: 0 for a in self.agents} # initialize rewards for actions taken
 
         # check if task requirements are met by aggregating agent traits
-        aggr_task_requirements = [[0]*self.trait_dim]*self.num_tasks
+        aggr_task_requirements = [[0]*self.trait_dim for _ in range(self.num_tasks)]
         
         # initialize action mask        
         action_masks = np.ones((self.num_agents, self.action_space().n), dtype=np.int8)
@@ -181,6 +181,10 @@ class PathTaskEnv(ParallelEnv):
             # if it is, constrict action "execute task"
             if self.tasks[on_task_index].finished():
                 action_masks[i][4] = 0
+                continue
+
+            # TODO: do not allow agent to choose action "execute task" if
+            # requirements of task are already met
 
         ### REWARD CALCULATION
         # give rewards to agents upon task completion
