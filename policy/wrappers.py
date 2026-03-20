@@ -1,6 +1,7 @@
+# code taken from https://pettingzoo.farama.org/tutorials/sb3/connect_four/
+
 import pettingzoo.utils
 import gymnasium as gym
-import pprint
 from sb3_contrib.common.maskable.policies import MaskableActorCriticPolicy
 from sb3_contrib.common.wrappers import ActionMasker
 from sb3_contrib import MaskablePPO
