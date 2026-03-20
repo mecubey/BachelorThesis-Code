@@ -5,7 +5,7 @@ from gymnasium.spaces import Discrete
 from pettingzoo import ParallelEnv
 from copy import copy
 from itertools import chain
-from gymnasium.spaces import MultiDiscrete, Box
+from gymnasium.spaces import Box
 from .task import Task
 
 class PathTaskEnv(ParallelEnv):
@@ -38,7 +38,7 @@ class PathTaskEnv(ParallelEnv):
         self.exc_time_limits = exc_time_limits
         self.rwd_limits = rwd_limits
         self.tasks = [Task() for _ in range(num_tasks)]
-        self.task_positions = None # since it is accessed in reset, step
+        self.task_positions = None # this way, step() doesn't need to loop through all tasks every time
 
         # enviroment variables
         self.trait_dim = trait_dim
@@ -156,7 +156,7 @@ class PathTaskEnv(ParallelEnv):
 
         # edit action masks
         for i in range(len(action_masks)):
-            # constrict movement
+            # restrict movement
             if self.agent_positions[i][0] == 0:
                 action_masks[i][0] = 0
             if self.agent_positions[i][1] == self.field_dim-1:
@@ -169,7 +169,7 @@ class PathTaskEnv(ParallelEnv):
             # check if agent is on a tile containing a task
             on_task_index = [j for j in range(self.num_tasks) if self.tasks[j].position == self.agent_positions[i]]
 
-            # agent is not on a tile of a task, so constrict action "execute task"
+            # agent is not on a tile of a task, so restrict action "execute task"
             if len(on_task_index) == 0:
                 action_masks[i][4] = 0 
                 continue
@@ -178,13 +178,10 @@ class PathTaskEnv(ParallelEnv):
             on_task_index = on_task_index[0]
 
             # if agent is on the same tile as a task, check if task is finished
-            # if it is, constrict action "execute task"
+            # if it is, restrict action "execute task"
             if self.tasks[on_task_index].finished():
                 action_masks[i][4] = 0
                 continue
-
-            # TODO: do not allow agent to choose action "execute task" if
-            # requirements of task are already met
 
         ### REWARD CALCULATION
         # give rewards to agents upon task completion
@@ -219,6 +216,8 @@ class PathTaskEnv(ParallelEnv):
         observations = {a: {"observation": agent_observations[i],
                             "action_mask": mask} for i, mask, a in zip(range(self.num_agents), action_masks, self.agents)}
         
+        # NOTE: tasks are not agents, but i'm unsure of how to return task info
+        # and be compliant with the ParallelEnv API
         infos = {self.agents[i]: {"position": self.agent_positions[i],
                                   "trait": self.agent_traits[i]} for i in range(self.num_agents)}
 
@@ -259,14 +258,14 @@ class PathTaskEnv(ParallelEnv):
 
     @functools.lru_cache(maxsize=None)
     def observation_space(self, agent = None):
-        return Box(low=-self.field_dim,   # or tighter bound if you know it
+        return Box(low=-self.field_dim,
                    high=self.field_dim,
                    shape=(self.trait_dim*self.num_agents + 
                          (self.trait_dim+2)*self.num_tasks +
                          2*(self.num_agents+self.num_tasks) +
                          2*self.num_tasks,),
-                    dtype=np.int64)
+                   dtype=np.int64)
 
     @functools.lru_cache(maxsize=None)
     def action_space(self, agent = None):
-        return Discrete(5) # agents can move up, right, down, left and execute a task
+        return Discrete(5)

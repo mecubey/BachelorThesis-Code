@@ -1,5 +1,6 @@
 import pettingzoo.utils
 import gymnasium as gym
+import pprint
 from sb3_contrib.common.maskable.policies import MaskableActorCriticPolicy
 from sb3_contrib.common.wrappers import ActionMasker
 from sb3_contrib import MaskablePPO
@@ -83,16 +84,24 @@ def eval(env, policy_path, seed=None, num_games=100):
     
     print("Starting evaluation of trained agent.")
 
+    rewards = {agent: 0 for agent in env.possible_agents}
     model = MaskablePPO.load(policy_path)
-    observations, infos = env.reset(seed)
-    
-    while env.agents:
-        actions = {agent: model.predict(
-                            observations[agent]["observation"], 
-                            action_masks=observations[agent]["action_mask"], 
-                            deterministic=True
-                        )[0] for agent in env.agents}
-        
-        observations, rewards, terminations, truncations, infos = env.step(actions)
-    
+
+    for _ in range(num_games):
+        observations, infos = env.reset(seed)    
+        while env.agents:
+            actions = {agent: model.predict(
+                                observations[agent]["observation"], 
+                                action_masks=observations[agent]["action_mask"], 
+                                deterministic=True
+                            )[0] for agent in env.agents}
+            
+            observations, reward, terminations, truncations, infos = env.step(actions)
+            
+            for agent in env.agents:
+                rewards[agent] += reward[agent]
+
+    avg_agent_rwd_episode = {agent: rewards[agent] / num_games for agent in env.possible_agents}
+    print(f"Average reward pers episode for each agent: {avg_agent_rwd_episode}")
+
     env.close()
