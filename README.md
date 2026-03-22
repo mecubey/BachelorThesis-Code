@@ -5,11 +5,16 @@ I plan on creating a benchmarking MA RL enviroment with different features which
 For the most basic version of the enviroment, see
 
 ```
-docs/path_task_env/explanation.md
+docs/path_task/explanation.md
 ```
 
 and 
 
 ```
-env/path_task_env/implementation/path_task_env.py
+env/path_task/implementation/path_task_env.py
+```
+
+To use that enviroment, import
+```
+env/path_task/path_task_v0.py
 ```
