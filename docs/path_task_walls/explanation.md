@@ -1,12 +1,11 @@
-# PathTaskEnv (PettingZoo Parallel Environment)
+# PathTaskWallsEnv (PettingZoo Parallel Environment)
 
 ## Overview
 
-`PathTaskEnv` is a **multi-agent cooperative gridworld environment** implemented using the PettingZoo `ParallelEnv` API. Multiple agents move on a 2D grid and must **collaborate to complete spatially distributed tasks**. Each task requires a combination of agent traits and takes multiple timesteps to complete.
+`PathTaskWallsEnv` is a **multi-agent cooperative gridworld environment** implemented using the PettingZoo `ParallelEnv` API. Multiple agents move on a 2D grid with walls and must **collaborate to complete spatially distributed tasks**. Each task requires a combination of agent traits and takes multiple timesteps to complete.
 
 * The environment is a **discrete-time, multi-agent MDP**.
 * Due to the nature of the `ParallelEnv` API, agents act **simultaneously** at each timestep.
-* Tasks require **joint execution** based on agent capabilities.
 
 ---
 
@@ -21,6 +20,8 @@ field_dim × field_dim
 * Agents and tasks occupy discrete grid cells
 * Multiple agents **can occupy the same cell**
 * There are **no two tasks on the same cell**
+* The grid is filled with walls, but every task is reachable from any agent position
+* `maze_intensity` can be used to configure the amount of walls, and therefore the complexity of the enviroment
 
 ---
 
@@ -94,6 +95,7 @@ Discrete(5)
 Each agent receives an `action_mask` that:
 
 * Prevents moving outside the grid
+* Prevents moving against a wall
 * Disables `execute task` if:
 
   * Agent is not on a task tile
@@ -103,74 +105,46 @@ Each agent receives an `action_mask` that:
 
 ## Observation Space
 
-Each agent observes a **vector of integers**:
+Each agent observes a **tuple consisting of the grid and a corresponding one-hot vector**:
 
 ```
-Box(low=-field_dim, high=field_dim, shape=(...), dtype=int64)
+spaces.Tuple((spaces.Box(
+              low=-np.inf,
+              high=np.inf,
+              shape=(self.field_dim, self.field_dim, cell_len), 
+              dtype=np.float32),
+
+              spaces.Box(
+              low=0,
+              high=1,
+              shape=(self.max_num_agents,),
+              dtype=np.float32
+              )))
 ```
+where `cell_len = self.max_num_agents * (1+self.trait_dim) + self.trait_dim + 8`.
 
-### Observation Structure
+### Observation Structure of a Single Cell
 
-#### 1. Static Information
-
-* All agent traits:
-
+#### 1. Agent Positional Encoding and Agent Traits
 ```
-num_agents × trait_dim
+num_agents * (1 + trait_dim)
 ```
+The positional encoding is `1` if the agent is at that cell, otherwise `0`.
 
-* All task descriptions:
-
+#### 2. Directional Encoding
 ```
-num_tasks × (trait_dim + 2)
+1 + 1 + 1 + 1
 ```
+* `1` if the agent's cell has an upper wall, otherwise 0.
+* `1` if the agent's cell has a right wall, otherwise 0.
+* `1` if the agent's cell has a bottom wall, otherwise 0.
+* `1` if the agent's cell has a left wall, otherwise 0.
 
-Includes:
-
-* Task requirements
-* Task reward
-* Task execution time
-
-#### 2. Relative Positions
-
-Relative positions to:
-
-* All agents
-* All tasks
-
-Encoded as:
-
+#### 2. Task Information
 ```
-(dx, dy)
-```
-
-Total:
-
-```
-2 × (num_agents + num_tasks)
-```
-
-#### 3. Task Progress
-
-For each task:
-
-* Execution progress
-* Completion flag (0 or 1)
-
-Total:
-
-```
-2 × num_tasks
-```
-
-### Final Observation Size
-
-```
-num_agents * trait_dim
-+ num_tasks * (trait_dim + 2)
-+ 2 * (num_agents + num_tasks)
-+ 2 * num_tasks
-```
+trait_dim + 1 + 1 + 1 + 1
+``` 
+The task requirement is encoded first, then the task reward, task execution time, task execution progress and task finished status.
 
 ---
 
@@ -212,7 +186,7 @@ At each timestep:
 
 1. Agents act simultaneously
 2. Movement updates positions
-3. Execution actions register contributions
+3. "Task Execution" actions register contributions
 4. Task requirements are checked
 5. Tasks progress if requirements are met
 6. Rewards are assigned
@@ -232,7 +206,7 @@ Optional ASCII rendering:
 For more information, see 
 
 ```
-env/path_task_env/implementation/path_task_env.py`
+env/path_task/implementation/path_task_walls.py`
 ```
 
 for the enviroment implementation.
@@ -240,5 +214,5 @@ for the enviroment implementation.
 If you wish to configure enviroment parameters and import the enviroment, use
 
 ```
-env/path_task_env/path_task_env_v0.py
+env/path_task/path_task_walls_v0.py
 ```
