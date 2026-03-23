@@ -136,9 +136,10 @@ class PathTaskEnv(ParallelEnv):
 
         observations = {}
         for i in range(self.max_num_agents):
-            observations[self.possible_agents[i]] = {"observation": (self.global_observation, self.agent_one_hots[i]),
-                                                     "action_mask": action_masks[i]}
-        
+            observations[self.possible_agents[i]] = {"observation": 
+                                                     {"grid": self.global_observation,
+                                                      "one_hot": self.agent_one_hots[i]},
+                                                     "action_mask": action_masks[i]}        
         if self.with_task_infos:
             infos.update(task_infos)
 
@@ -231,21 +232,26 @@ class PathTaskEnv(ParallelEnv):
                 action_masks[i][4] = 0
                 continue
 
-        terminations = {a: False for a in self.agents}
+        env_termination = False
         if all(t.finished() for t in self.tasks):
-            terminations = {a: True for a in self.agents}
-            self.agents = []
+            env_termination = True
+        terminations = {a: env_termination for a in self.agents}
 
-        truncations = {a: False for a in self.agents}
+        env_truncation = False
         if self.timestep >= self.episode_length:
-            truncations = {a: True for a in self.agents}
+            env_truncation = True
+        truncations = {a: env_truncation for a in self.agents}
+
+        if env_termination or env_truncation:
             self.agents = []
 
         self.timestep += 1   
 
         observations = {}
         for i in range(self.max_num_agents):
-            observations[self.possible_agents[i]] = {"observation": (self.global_observation, self.agent_one_hots[i]),
+            observations[self.possible_agents[i]] = {"observation": 
+                                                     {"grid": self.global_observation,
+                                                      "one_hot": self.agent_one_hots[i]},
                                                      "action_mask": action_masks[i]}
         
         if self.with_task_infos:
@@ -305,19 +311,19 @@ class PathTaskEnv(ParallelEnv):
 
     @functools.lru_cache(maxsize=None)
     def observation_space(self, agent = None):
-        return spaces.Tuple((spaces.Box(
+        return spaces.Dict({"grid": spaces.Box(
                                 low=-np.inf,
                                 high=np.inf,
                                 shape=(self.field_dim, self.field_dim, 
                                        self.max_num_agents * (1+self.trait_dim) + self.trait_dim + 4),
                                 dtype=np.float32
                             ),
-                            spaces.Box(
+                            "one_hot": spaces.Box(
                                 low=0,
                                 high=1,
                                 shape=(self.max_num_agents,),
                                 dtype=np.float32
-                            )))
+                            )})
     
     @functools.lru_cache(maxsize=None)
     def action_space(self, agent = None):

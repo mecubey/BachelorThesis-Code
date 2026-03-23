@@ -1,12 +1,12 @@
 from .implementation.path_task import PathTaskEnv
 
-num_agents = 3
-num_tasks = 8
+num_agents = 1
+num_tasks = 6
 task_exc_time_limits = [1, 3]
 task_rwd_limits = [5, 10]
 trait_dim = 4
 episode_length = 100
-field_dim = 7
+field_dim = 4
 
 def raw_env(render_mode = None, delay_btw_frames = 0, with_task_infos = False):
     return PathTaskEnv(num_agents,
