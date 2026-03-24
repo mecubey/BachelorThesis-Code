@@ -1,6 +1,6 @@
 from .implementation.path_task import PathTaskEnv
 
-num_agents = 1
+num_agents = 2
 num_tasks = 6
 task_exc_time_limits = [1, 3]
 task_rwd_limits = [5, 10]

@@ -112,14 +112,13 @@ spaces.Tuple((spaces.Box(
               low=-np.inf,
               high=np.inf,
               shape=(self.field_dim, self.field_dim, cell_len), 
-              dtype=np.float32),
+              dtype=np.double),
 
               spaces.Box(
               low=0,
               high=1,
               shape=(self.max_num_agents,),
-              dtype=np.float32
-              )))
+              dtype=np.double)))
 ```
 where `cell_len = self.max_num_agents * (1+self.trait_dim) + self.trait_dim + 8`.
 
@@ -140,7 +139,7 @@ The positional encoding is `1` if the agent is at that cell, otherwise `0`.
 * `1` if the agent's cell has a bottom wall, otherwise 0.
 * `1` if the agent's cell has a left wall, otherwise 0.
 
-#### 2. Task Information
+#### 3. Task Information
 ```
 trait_dim + 1 + 1 + 1 + 1
 ``` 
@@ -150,16 +149,15 @@ The task requirement is encoded first, then the task reward, task execution time
 
 ## Rewards
 
-Rewards are given **only when a task is completed**.
+Rewards are given **only when a task is completed**. Agents who are on the tile at time
+of task completion receive the reward.
 
 For a completed task:
 
 * `R` = task reward
-* `T` = execution time
-* `c_i` = number of timesteps agent **i** contributed
 
 ```
-reward_i = R * (c_i / T)
+reward_i += R 
 ```
 
 ---

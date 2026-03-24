@@ -7,7 +7,7 @@ class Task():
         self.execution_time = None 
         self.reward = None 
         self.execution_progress = 0
-        self.contribution_history = []
+        self.reward_given = False
 
     def randomize(self, rng : np.random.Generator, 
                   position, min_exc_time, max_exc_time, min_rwd, max_rwd, trait_dim):
@@ -29,7 +29,7 @@ class Task():
 
     def reset_task_progress(self):
         self.execution_progress = 0
-        self.contribution_history = []
+        self.reward_given = False
 
     def finished(self):
         return self.execution_progress >= self.execution_time

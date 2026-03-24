@@ -4,7 +4,6 @@ import time
 from gymnasium import spaces
 from pettingzoo import ParallelEnv
 from copy import copy
-from gymnasium.spaces import Box
 from env.task import Task
 from env.enums import States
 
@@ -33,7 +32,7 @@ class PathTaskEnv(ParallelEnv):
         self.possible_agents = ["agent_"+str(i) for i in range(num_agents)]
         self.agent_positions = None
         self.agent_traits = None
-        self.agent_one_hots = [[1 if j == i else 0 for j in range(num_agents)] for i in range(num_agents)]
+        self.agent_one_hots = [np.array([1 if j == i else 0 for j in range(num_agents)], np.float32) for i in range(num_agents)]
 
         # tasks
         self.num_tasks = num_tasks
@@ -81,7 +80,13 @@ class PathTaskEnv(ParallelEnv):
         self.agents = copy(self.possible_agents)
 
         self.global_observation = np.zeros(shape=(self.field_dim, self.field_dim, 
-                                                  self.max_num_agents * (1+self.trait_dim) + self.trait_dim + 4))
+                                                  self.max_num_agents * (1+self.trait_dim) + self.trait_dim + 8),
+                                                  dtype=np.float32)
+
+        for row in range(self.field_dim):
+            for col in range(self.field_dim):
+                self.global_observation[row, col][self.task_enc_begin+self.task_enc_len:self.task_enc_begin+self.task_enc_len+4] = \
+                [int(val) for val in [row == 0, col == self.field_dim-1, row == self.field_dim-1, col == 0]]
 
         # randomize task attributes
         # make sure tasks cannot be on the same tile
@@ -109,7 +114,7 @@ class PathTaskEnv(ParallelEnv):
                 task_infos["task_"+str(i)] = self.tasks[i].attr_dict()
 
         # initialize action masks
-        action_masks = np.ones((self.max_num_agents, self.action_space().n), dtype=np.int8)
+        action_masks = np.ones((self.max_num_agents, self.action_space().n))
 
         # generate agent traits
         self.agent_traits = rng.choice(a=[0, 1], size=(self.max_num_agents, self.trait_dim))
@@ -150,10 +155,10 @@ class PathTaskEnv(ParallelEnv):
         return observations, infos
 
     def step(self, actions):
-        rewards = {a: 0 for a in self.agents} # initialize rewards for actions taken
+        rewards = {a: -0.01 for a in self.agents} # initialize rewards for actions taken (smal step penalty)
 
         # initialize action mask        
-        action_masks = np.ones((self.max_num_agents, self.action_space().n), dtype=np.int8)
+        action_masks = np.ones((self.max_num_agents, self.action_space().n))
 
         # intialize aggregated trait vectors to check task progress
         aggr_trait_vectors = np.zeros(shape=(self.num_tasks, self.trait_dim))
@@ -169,6 +174,8 @@ class PathTaskEnv(ParallelEnv):
 
             if decoded_action != States.EXECUTE_TASK:
                 # agents wants to move
+
+                # 
 
                 # first, remove agent information from currently occupied cell (requirement and pos_encoding)
                 self.global_observation[self.agent_positions[i][0], self.agent_positions[i][1]][i*(self.trait_dim+1):(i+1)*(self.trait_dim+1)] = np.zeros(self.trait_dim+1)
@@ -186,9 +193,6 @@ class PathTaskEnv(ParallelEnv):
             # due to action mask, we know agent is on a task, so extract task index
             on_task_index = self.task_positions.index(self.agent_positions[i])
 
-            # record that agent worked on this task in this timestep (to calculate reward assignment later on)
-            self.tasks[on_task_index].contribution_history.append(self.possible_agents[i])
-
             # record agent traits
             aggr_trait_vectors[on_task_index] += self.agent_traits[i] 
 
@@ -204,14 +208,12 @@ class PathTaskEnv(ParallelEnv):
                 self.global_observation[x, y][self.task_enc_begin+self.trait_dim+2] = self.tasks[i].execution_progress
 
             ### REWARD CALCULATION
-            if self.tasks[i].finished():
+            if self.tasks[i].finished() and not self.tasks[i].reward_given:
                 self.global_observation[x, y][self.task_enc_begin+self.trait_dim+3] = 1
-                contributed_agents = list(set(self.tasks[i].contribution_history))
-                for a in contributed_agents:
-                    # reward is scaled by contribution of each agent
-                    rewards[a] += self.tasks[i].reward * \
-                    self.tasks[i].contribution_history.count(a) / self.tasks[i].execution_time
-                self.tasks[i].contribution_history = []
+                for j in range(self.max_num_agents):
+                    if self.agent_positions[j] == self.task_positions[i]:
+                        rewards[self.possible_agents[j]] += self.tasks[i].reward
+                self.tasks[i].reward_given = True
             ### REWARD CALCULATION
 
             if self.with_task_infos:
@@ -315,14 +317,14 @@ class PathTaskEnv(ParallelEnv):
                                 low=-np.inf,
                                 high=np.inf,
                                 shape=(self.field_dim, self.field_dim, 
-                                       self.max_num_agents * (1+self.trait_dim) + self.trait_dim + 4),
-                                dtype=np.float32
+                                       self.max_num_agents * (1+self.trait_dim) + self.trait_dim + 8),
+                                dtype=np.double
                             ),
                             "one_hot": spaces.Box(
                                 low=0,
                                 high=1,
                                 shape=(self.max_num_agents,),
-                                dtype=np.float32
+                                dtype=np.double
                             )})
     
     @functools.lru_cache(maxsize=None)
