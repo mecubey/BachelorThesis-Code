@@ -177,7 +177,9 @@ Set to `1` if the `Zone` has spread to that tile, `0` otherwise.
 
 ## Rewards
 
-Rewards are given **only when a task is completed**. Agents who are on the tile at time
+There is a negative reward of `-0.1` at each step to encourage agents to not waste time with useless actions.
+
+Rewards are given **when a task is completed**. Agents who are on the tile at time
 of task completion receive the reward.
 
 For a completed task:
