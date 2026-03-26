@@ -4,7 +4,7 @@ import numpy as np
 import sys
 sys.path.insert(0, '')
 
-from env.path_task.path_task_v0 import raw_env
+from env.path_task_v0 import raw_env
 from agent import PPOAgent
 from pprint import pprint
 

@@ -4,20 +4,23 @@ import time
 from gymnasium import spaces
 from pettingzoo import ParallelEnv
 from copy import copy
-from env.task import Task
+from colorama import Fore, Back, Style
+from .task import Task
 from .maze import generate_maze, is_dir_avail
-from env.enums import States
+from .enums import States
+from .zone import Zone
 
-class PathTaskWallsEnv(ParallelEnv):
+class PathTaskEnv(ParallelEnv):
     metadata = {
         "name": "path_task_env_v0",
     }
 
     def __init__(self,
                  num_agents,
-                 num_tasks, exc_time_limits, rwd_limits,
-                 maze_intensity, trait_dim, episode_length, field_dim, render_mode, 
-                 delay_btw_frames, with_task_infos):
+                 num_tasks, exc_time_limits, rwd_limits, maze_intensity, 
+                 with_zone, max_num_spread, step_spread_prob, spread_probs, 
+                 zone_dmg, trait_dim, episode_length, field_dim, 
+                 render_mode, delay_btw_frames, with_task_infos):
         assert num_agents > 0
         assert num_tasks > 0
         assert field_dim > 0
@@ -42,21 +45,35 @@ class PathTaskWallsEnv(ParallelEnv):
         self.rwd_limits = rwd_limits
         self.tasks = [Task() for _ in range(num_tasks)]
         self.task_positions = None # this way, step() doesn't need to loop through all task positions every time
+        self.num_tasks_finished = 0
 
         # maze
         self.maze = None
         self.maze_intensity = maze_intensity
-        self.maze_walls = None
+
+        # zone
+        self.zone = Zone(max_num_spread, spread_probs, zone_dmg)
+        self.with_zone = with_zone
+        self.step_spread_prob = step_spread_prob
 
         # obs attributes
         # order for one cell: num_agents * (agent_pos_encoding (1) + agent_trait (trait_dim)) + 
         #                     task_requirement (trait_dim) + task_reward (1) + task_execution_time (1) +
-        #                     task_execution_progress (1) + task_finished (1) + avail_directions (4)
-        self.global_observation = None
+        #                     task_execution_progress (1) + task_finished (1) + avail_directions (4) + zone (1)
+        self.global_obs = None
         self.trait_dim = trait_dim
         self.field_dim = field_dim
-        self.task_enc_begin = num_agents * (1+trait_dim)
-        self.task_enc_len = trait_dim+4
+        all_agent_attr = num_agents*(1 + trait_dim)
+        self.offsets = {
+            "agent_attr": 1 + trait_dim,
+            "task_req": [all_agent_attr, all_agent_attr + trait_dim],
+            "task_rwd": all_agent_attr + trait_dim,
+            "task_exc_time": all_agent_attr + trait_dim+1,
+            "task_exc_prg": all_agent_attr + trait_dim+2,
+            "task_fin": all_agent_attr + trait_dim+3,
+            "dirs": [all_agent_attr + trait_dim+4, all_agent_attr + trait_dim+8],
+            "zone": all_agent_attr + trait_dim+8
+        }
 
         # enviroment variables
         self.episode_length = episode_length
@@ -64,56 +81,56 @@ class PathTaskWallsEnv(ParallelEnv):
         self.delay_btw_frames = delay_btw_frames
         self.timestep = None
         self.with_task_infos = with_task_infos
+        self.rng = np.random.default_rng()
+        self.agent_char = Fore.GREEN + "A" + Fore.RESET
+        self.coalition_char = Fore.GREEN + "L" + Fore.RESET
+        self.task_char = Fore.BLUE + "T" + Fore.RESET
+        self.zone_color = Back.RED
 
     def on_task(self, pos):
         # to check if a tile contains a task, check if tile's task_execution_time > 0
-        return self.global_observation[pos[0], pos[1]][self.task_enc_begin+self.trait_dim+1] > 0
+        return self.global_obs[pos[0], pos[1]][self.offsets["task_exc_time"]] > 0
 
-    def edit_action_mask(self, row, col, agent_pos, action_mask):
-        if row == 0 or not is_dir_avail(self.maze, agent_pos, States.UP):
-            action_mask[States.UP] = 0
-        if col == self.field_dim-1 or not is_dir_avail(self.maze, agent_pos, States.RIGHT):
-            action_mask[States.RIGHT] = 0
-        if row == self.field_dim-1 or not is_dir_avail(self.maze, agent_pos, States.DOWN):
-            action_mask[States.DOWN] = 0
-        if col == 0 or not is_dir_avail(self.maze, agent_pos, States.LEFT):
-            action_mask[States.LEFT] = 0
-        if not self.on_task(agent_pos):
+    def on_zone(self, pos):
+        return self.global_obs[pos[0], pos[1]][self.offsets["zone"]] == 1
+
+    def edit_action_mask(self, pos, action_mask):
+        action_mask[0:self.action_space().n-1] = self.global_obs[pos[0], pos[1]][self.offsets["dirs"][0]:self.offsets["dirs"][1]]
+        if not self.on_task(pos):
+            action_mask[States.EXECUTE_TASK] = 0
+        if self.global_obs[pos[0], pos[1]][self.offsets["task_fin"]] == 1:
             action_mask[States.EXECUTE_TASK] = 0
 
     def reset(self, seed=None, options=None):
-        rng = np.random.default_rng(seed)
+        if not (seed == None):
+            self.rng = np.random.default_rng(seed)
         self.timestep = 0
-        self.agents = copy(self.possible_agents)
                   
-        self.global_observation = np.zeros(shape=(self.field_dim, self.field_dim, 
-                                                  self.max_num_agents * (1+self.trait_dim) + self.trait_dim + 8))
+        self.agents = copy(self.possible_agents)
+
+        if not self.with_zone: # if spread_prob == 0, it means we don't want a zone at all
+            self.global_obs = np.zeros(shape=(self.field_dim, self.field_dim, self.offsets["zone"]))
+        else:
+            self.global_obs = np.zeros(shape=(self.field_dim, self.field_dim, self.offsets["zone"]+1))
 
         # generate maze
         self.maze = generate_maze(self.field_dim, self.maze_intensity, seed)
-        # set maze walls
-        self.maze_walls = {}
         for row in range(self.field_dim):
             for col in range(self.field_dim):
-                self.maze_walls[(row, col)] = {States.UP: row == 0 or 
-                                               not is_dir_avail(self.maze, [row, col], States.UP),
-                                               States.RIGHT: col == self.field_dim-1 or 
-                                               not is_dir_avail(self.maze, [row, col], States.RIGHT),
-                                               States.DOWN: row == self.field_dim-1 or 
-                                               not is_dir_avail(self.maze, [row, col], States.DOWN),
-                                               States.LEFT: col == 0 or 
-                                               not is_dir_avail(self.maze, [row, col], States.LEFT)}
-                self.global_observation[row, col][self.task_enc_begin+self.task_enc_len:self.task_enc_begin+self.task_enc_len+4] = \
-                [int(val) for val in list(self.maze_walls[(row, col)].values())]
+                self.global_obs[row, col][self.offsets["dirs"][0]:self.offsets["dirs"][1]] = \
+                [val for val in [not row == 0 and is_dir_avail(self.maze, [row, col], States.UP),
+                                 not col == self.field_dim-1 and is_dir_avail(self.maze, [row, col], States.RIGHT),
+                                 not row == self.field_dim-1 and is_dir_avail(self.maze, [row, col], States.DOWN),
+                                 not col == 0 and is_dir_avail(self.maze, [row, col], States.LEFT)]]
 
         # randomize task attributes
         # make sure tasks cannot be on the same tile
-        base_indices = rng.choice(self.field_dim*self.field_dim, size=self.num_tasks, replace=False)
+        self.num_tasks_finished = 0
+        base_indices = self.rng.choice(self.field_dim*self.field_dim, size=self.num_tasks, replace=False)
         self.task_positions = [[i // self.field_dim, i % self.field_dim] for i in base_indices]
         task_infos = {}
-        after_trait_enc = self.task_enc_begin+self.trait_dim
         for i in range(self.num_tasks):
-            self.tasks[i].randomize(rng, self.task_positions[i], 
+            self.tasks[i].randomize(self.rng, self.task_positions[i], 
                                     self.exc_time_limits[0], self.exc_time_limits[1]+1,
                                     self.rwd_limits[0], self.rwd_limits[1]+1,
                                     self.trait_dim)
@@ -122,11 +139,11 @@ class PathTaskWallsEnv(ParallelEnv):
             x = self.task_positions[i][0]
             y = self.task_positions[i][1]
             
-            self.global_observation[x, y][self.task_enc_begin:after_trait_enc] = self.tasks[i].requirement
-            self.global_observation[x, y][after_trait_enc] = self.tasks[i].reward
-            self.global_observation[x, y][after_trait_enc+1] = self.tasks[i].execution_time
-            self.global_observation[x, y][after_trait_enc+2] = self.tasks[i].execution_progress
-            self.global_observation[x, y][after_trait_enc+3] = int(self.tasks[i].finished())
+            self.global_obs[x, y][self.offsets["task_req"][0]:self.offsets["task_req"][1]] = self.tasks[i].requirement
+            self.global_obs[x, y][self.offsets["task_rwd"]] = self.tasks[i].reward
+            self.global_obs[x, y][self.offsets["task_exc_time"]] = self.tasks[i].execution_time
+            self.global_obs[x, y][self.offsets["task_exc_prg"]] = self.tasks[i].execution_progress
+            self.global_obs[x, y][self.offsets["task_fin"]] = int(self.tasks[i].finished())
 
             if self.with_task_infos:
                 task_infos["task_"+str(i)] = self.tasks[i].attr_dict()
@@ -135,24 +152,25 @@ class PathTaskWallsEnv(ParallelEnv):
         action_masks = np.ones((self.max_num_agents, self.action_space().n))
 
         # generate agent traits
-        self.agent_traits = rng.choice(a=[0, 1], size=(self.max_num_agents, self.trait_dim))
+        self.agent_traits = self.rng.choice(a=[0, 1], size=(self.max_num_agents, self.trait_dim))
         # we want to make sure that the agents have the ability to complete each task
         summed_traits = sum(self.agent_traits)
         for i in range(self.trait_dim):
             if summed_traits[i] == 0: # meaning, no agent has ability in this trait
-                self.agent_traits[rng.choice(self.max_num_agents)][i] = 1
+                self.agent_traits[self.rng.choice(self.max_num_agents)][i] = 1
 
         self.agent_positions = []
         infos = {}
         for i in range(self.max_num_agents):
             # randomize agent position
-            a_pos = [rng.integers(self.field_dim), rng.integers(self.field_dim)]
+            a_pos = [self.rng.integers(self.field_dim), self.rng.integers(self.field_dim)]
             self.agent_positions.append(a_pos)
 
             # encode position encoding and agent traits into obs
-            self.global_observation[a_pos[0]][a_pos[1]][i*(self.trait_dim+1):(i+1)*(self.trait_dim+1)] = [1, *self.agent_traits[i]]
+            self.global_obs[a_pos[0], a_pos[1]][i*self.offsets["agent_attr"]:(i+1)*self.offsets["agent_attr"]] = \
+            [1, *self.agent_traits[i]]
 
-            self.edit_action_mask(a_pos[0], a_pos[1], self.agent_positions[i], action_masks[i])
+            self.edit_action_mask(a_pos, action_masks[i])
 
             # edit infos
             infos[self.possible_agents[i]] = {"position": a_pos, "trait": self.agent_traits[i]}
@@ -160,7 +178,7 @@ class PathTaskWallsEnv(ParallelEnv):
         observations = {}
         for i in range(self.max_num_agents):
             observations[self.possible_agents[i]] = {"observation": 
-                                                     {"grid": self.global_observation,
+                                                     {"grid": self.global_obs,
                                                       "one_hot": self.agent_one_hots[i]},
                                                      "action_mask": action_masks[i]}                
         if self.with_task_infos:
@@ -183,6 +201,15 @@ class PathTaskWallsEnv(ParallelEnv):
 
         infos = {}
 
+        # spread in this timestep according to probability
+        if self.with_zone and self.rng.random() <= self.step_spread_prob:
+            if self.zone.empty():
+                self.zone.spawn(self.rng.integers(low=self.field_dim, size=2), self.global_obs, self.offsets["zone"])
+            else:
+                self.zone.spread(self.global_obs, self.offsets["dirs"], self.offsets["zone"], self.rng)
+                if self.zone.finished():
+                    self.zone.remove(self.global_obs, self.offsets["zone"])
+
         for i in range(self.max_num_agents):
             # edit infos
             infos[self.possible_agents[i]] = {"position": self.agent_positions[i], "trait": self.agent_traits[i]}
@@ -194,14 +221,16 @@ class PathTaskWallsEnv(ParallelEnv):
                 # agents wants to move
 
                 # first, remove agent information from currently occupied cell (requirement and pos_encoding)
-                self.global_observation[self.agent_positions[i][0], self.agent_positions[i][1]][i*(self.trait_dim+1):(i+1)*(self.trait_dim+1)] = np.zeros(self.trait_dim+1)
+                self.global_obs[self.agent_positions[i][0], self.agent_positions[i][1]] \
+                [i*self.offsets["agent_attr"]:(i+1)*self.offsets["agent_attr"]] = np.zeros(self.trait_dim+1)
 
                 # agent moves to new cell            
                 self.agent_positions[i][0] += decoded_action[0]
                 self.agent_positions[i][1] += decoded_action[1]
 
                 # add agent information to new cell
-                self.global_observation[self.agent_positions[i][0], self.agent_positions[i][1]][i*(self.trait_dim+1):(i+1)*(self.trait_dim+1)] = [1, *self.agent_traits[i]]
+                self.global_obs[self.agent_positions[i][0], self.agent_positions[i][1]] \
+                [i*self.offsets["agent_attr"]:(i+1)*self.offsets["agent_attr"]] = [1, *self.agent_traits[i]]
                 continue
 
             # agent wants to execute task
@@ -215,48 +244,42 @@ class PathTaskWallsEnv(ParallelEnv):
         task_infos = {}
         # if requirement of task is met, progress task execution only when task isn't finished
         for i in range(self.num_tasks):
-            x = self.task_positions[i][0]
-            y = self.task_positions[i][1]
+            row = self.task_positions[i][0]
+            col = self.task_positions[i][1]
 
             if all((aggr_trait_vectors[i][j] >= self.tasks[i].requirement[j]) and 
                    not self.tasks[i].finished() for j in range(self.trait_dim)):
                 self.tasks[i].execution_progress += 1
-                self.global_observation[x, y][self.task_enc_begin+self.trait_dim+2] = self.tasks[i].execution_progress
+                self.global_obs[row, col][self.offsets["task_exc_prg"]] = self.tasks[i].execution_progress
 
             ### REWARD CALCULATION
             if self.tasks[i].finished() and not self.tasks[i].reward_given:
-                self.global_observation[x, y][self.task_enc_begin+self.trait_dim+3] = 1
+                self.global_obs[row, col][self.offsets["task_fin"]] = 1
                 for j in range(self.max_num_agents):
                     if self.agent_positions[j] == self.task_positions[i]:
                         rewards[self.possible_agents[j]] += self.tasks[i].reward
                 self.tasks[i].reward_given = True
+                self.num_tasks_finished += 1
             ### REWARD CALCULATION
 
             if self.with_task_infos:
                 task_infos["task_"+str(i)] = self.tasks[i].attr_dict()
 
         for i in range(self.max_num_agents):
+            # check if on zone tile
+            if self.with_zone and self.on_zone(self.agent_positions[i]):
+                rewards[self.possible_agents[i]] += self.zone.zone_dmg
+
             # restrict movement (field edge + walls) and "execute task"
-            self.edit_action_mask(self.agent_positions[i][0], self.agent_positions[i][1], self.agent_positions[i], action_masks[i])
-
-            if action_masks[i][4] == 0:
-                continue
-
-            # now we know agent is on tile of a task, so extract task index
-            on_task_index = self.task_positions.index(self.agent_positions[i])
-
-            # check if task is finished; if it is, restrict action "execute task"
-            if self.tasks[on_task_index].finished():
-                action_masks[i][4] = 0
-                continue
+            self.edit_action_mask(self.agent_positions[i], action_masks[i])
 
         env_termination = False
-        if all(t.finished() for t in self.tasks):
+        if self.num_tasks_finished == self.num_tasks:
             env_termination = True
         terminations = {a: env_termination for a in self.agents}
 
         env_truncation = False
-        if self.timestep >= self.episode_length:
+        if self.timestep == self.episode_length:
             env_truncation = True
         truncations = {a: env_truncation for a in self.agents}
 
@@ -268,7 +291,7 @@ class PathTaskWallsEnv(ParallelEnv):
         observations = {}
         for i in range(self.max_num_agents):
             observations[self.possible_agents[i]] = {"observation": 
-                                                     {"grid": self.global_observation,
+                                                     {"grid": self.global_obs,
                                                       "one_hot": self.agent_one_hots[i]},
                                                      "action_mask": action_masks[i]}                
         if self.with_task_infos:
@@ -299,7 +322,7 @@ class PathTaskWallsEnv(ParallelEnv):
             print("*", end="")
             for col in range(self.field_dim):
                 # check if upper walls exist
-                if self.maze_walls[(row, col)][States.UP]:
+                if not self.global_obs[row, col][self.offsets["dirs"][0]:self.offsets["dirs"][1]][States.UP]:
                     print("---", end="")
                 else:
                     print("   ", end="")
@@ -308,35 +331,47 @@ class PathTaskWallsEnv(ParallelEnv):
             print()
 
             for col in range(self.field_dim):
+                num_space = 1
                 # check if left walls exist
-                if self.maze_walls[(row, col)][States.LEFT]:
+                if not self.global_obs[row, col][self.offsets["dirs"][0]:self.offsets["dirs"][1]][States.LEFT]:
                     print("|", end="")
-                    if [row, col] in self.agent_positions:
-                        print(" A ", end="")
-                    elif self.on_task([row, col]) and not self.tasks[self.task_positions.index([row, col])].finished():
-                        print(" T ", end="")
-                    else:
-                        print("   ", end="")
-                else:
-                    if [row, col] in self.agent_positions:
-                        print("  A ", end="")
-                    elif self.on_task([row, col]) and not self.tasks[self.task_positions.index([row, col])].finished():
-                        print("  T ", end="")
-                    else:
-                        print("    ", end="")
-            # check last right wall of current row
-            if self.maze_walls[(row, self.field_dim-1)][States.RIGHT]:
-                print("|", end="")
-            else:
-                print(" ", end="")
+                    num_space -= 1
 
-            print()
+                cell_str = [" ", " ", " "]
+                
+                # store agent char
+                agent_count = self.agent_positions.count([row, col])
+                cell_agent_char = self.agent_char
+                if agent_count > 1:
+                    cell_agent_char = self.coalition_char
+                if agent_count >= 1:
+                    cell_str[1] = cell_agent_char
+
+                # handle task char, task char + agent char
+                if self.on_task([row, col]) and not self.global_obs[row, col][self.offsets["task_fin"]]:
+                    if cell_str[1] == cell_agent_char:
+                        cell_str = [self.task_char, " ", cell_agent_char]
+                    else:
+                        cell_str[1] = self.task_char
+
+                cell_str = "".join(cell_str)
+                
+                if self.with_zone and self.global_obs[row, col][self.offsets["zone"]]:
+                    # add zone as background color
+                    cell_str = self.zone_color + cell_str + Back.RESET
+
+                cell_str = " "*num_space + cell_str
+
+                print(cell_str, end="")
+
+            # check last right wall of current row
+            print("|")
 
             # check bottom wall of last row
             if row == self.field_dim-1:
                 print("*", end="")
                 for col in range(self.field_dim):
-                    if self.maze_walls[(row, col)][States.DOWN]:
+                    if not self.global_obs[row, col][self.offsets["dirs"][0]:self.offsets["dirs"][1]][States.DOWN]:
                         print("---", end="")
                     else:
                         print("   ", end="")

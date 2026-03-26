@@ -1,5 +1,5 @@
 import numpy as np
-from env.enums import States
+from .enums import States
 
 def generate_maze(dim, maze_intensity, seed = None, iter_c = 10):
     rng = np.random.default_rng(seed)
@@ -7,6 +7,7 @@ def generate_maze(dim, maze_intensity, seed = None, iter_c = 10):
     if dim == 1:
         return np.array([[4]])
 
+    # generate initial perfect maze
     maze = np.array([[1]*(dim-1)+[2] if i != dim-1 else [1]*(dim-1)+[-1] for i in range(dim)])
 
     for i in range(dim*dim*iter_c):
