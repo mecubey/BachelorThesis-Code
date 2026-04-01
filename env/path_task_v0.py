@@ -1,6 +1,6 @@
 import numpy as np
 from pprint import pprint
-from implementation.path_task import PathTaskEnv
+from .implementation.path_task import PathTaskEnv
 
 num_agents = 2
 num_tasks = 6
