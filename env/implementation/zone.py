@@ -9,22 +9,22 @@ class Zone:
         self.spread_progress = 0
         self.max_num_spread = max_num_spread
 
-    def spawn(self, start_pos: list[int], global_obs, zone_offset):
+    def spawn(self, start_pos, grid_obs, zone_offset):
         self.occupied_tiles.append(start_pos)
-        global_obs[start_pos[0], start_pos[1]][zone_offset] = 1
+        grid_obs[*start_pos, zone_offset] = 1
 
-    def spread(self, global_obs, dirs_offsets, zone_offset, rng: np.random.Generator):
+    def spread(self, grid_obs, dirs_offsets, zone_offset, rng: np.random.Generator):
         self.spread_progress += 1
         newly_occupied = []
         for pos in self.occupied_tiles:
-            no_walls = global_obs[pos[0], pos[1]][dirs_offsets[0]:dirs_offsets[1]]
+            no_walls = grid_obs[*pos, dirs_offsets[0]:dirs_offsets[1]]
 
             for i in range(len(no_walls)):
                 if no_walls[i]: # can only spread if there isn't a wall there
-                    new_pos = np.array([pos[0]+self.directions[i][0], pos[1]+self.directions[i][1]])
+                    new_pos = (pos[0]+self.directions[i][0], pos[1]+self.directions[i][1])
                     # can only spread if next tile hasn't been infected yet, and probability hits
-                    if not global_obs[new_pos[0], new_pos[1]][zone_offset] and rng.random() <= self.spread_probs[i]:
-                        global_obs[new_pos[0], new_pos[1]][zone_offset] = 1
+                    if not grid_obs[*new_pos, zone_offset] and rng.random() <= self.spread_probs[i]:
+                        grid_obs[*new_pos, zone_offset] = 1
                         newly_occupied.append(new_pos)
 
         self.occupied_tiles += newly_occupied
@@ -35,8 +35,8 @@ class Zone:
     def empty(self):
         return len(self.occupied_tiles) == 0
 
-    def remove(self, global_obs, zone_offset):
+    def remove(self, grid_obs, zone_offset):
         for pos in self.occupied_tiles:
-            global_obs[pos[0], pos[1]][zone_offset] = 0
+            grid_obs[*pos, zone_offset] = 0
         self.occupied_tiles = []
         self.spread_progress = 0

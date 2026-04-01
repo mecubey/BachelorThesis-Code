@@ -1,5 +1,6 @@
 import numpy as np
 from .enums import States
+from itertools import product
 
 def generate_maze(dim, maze_intensity, seed = None, iter_c = 10):
     rng = np.random.default_rng(seed)
@@ -27,7 +28,7 @@ def generate_maze(dim, maze_intensity, seed = None, iter_c = 10):
         if origin_y == 0:
             directions.remove(3)
         new_direction = rng.choice(directions)
-        maze[origin_x][origin_y] = new_direction
+        maze[origin_x, origin_y] = new_direction
 
         if i == dim*dim*iter_c-1: # don't want origin in output, so break at second to last iteration
             break
@@ -35,18 +36,17 @@ def generate_maze(dim, maze_intensity, seed = None, iter_c = 10):
         # step 2: that neigbouring node becomes the new origin
         # step 3: remove the new origin node's pointer
         if new_direction == States.UP:
-            maze[origin_x-1][origin_y] = States.ORIGIN
+            maze[origin_x-1, origin_y] = States.ORIGIN
         if new_direction == States.RIGHT:
-            maze[origin_x][origin_y+1] = States.ORIGIN
+            maze[origin_x, origin_y+1] = States.ORIGIN
         if new_direction == States.DOWN:
-            maze[origin_x+1][origin_y] = States.ORIGIN
+            maze[origin_x+1, origin_y] = States.ORIGIN
         if new_direction == States.LEFT:
-            maze[origin_x][origin_y-1] = States.ORIGIN
+            maze[origin_x, origin_y-1] = States.ORIGIN
 
-    inds = [[x0, y0] for x0 in list(range(dim)) for y0 in list(range(dim))]
-    freed_tiles_inds = rng.choice(inds, replace=False, size=int((1-maze_intensity)*dim*dim))
-    for ind in freed_tiles_inds:
-        maze[ind[0]][ind[1]] = States.ALL_OUTGOING
+    base_indices = np.arange(dim, dtype=np.int_)
+    freed_tiles_inds = rng.choice(list(product(base_indices, base_indices)), size=int((1-maze_intensity)*dim*dim))
+    maze[freed_tiles_inds[:, 0], freed_tiles_inds[:, 1]] = States.ALL_OUTGOING
 
     return maze
 
@@ -59,9 +59,10 @@ opp_dirs = {
 
 def is_dir_avail(maze, pos, dir):
     opp_dir, opp_row, opp_col = opp_dirs[dir]
-    
-    if not maze[pos[0]][pos[1]] == dir and not maze[pos[0]+opp_row][pos[1]+opp_col] == opp_dir and \
-       not maze[pos[0]][pos[1]] == States.ALL_OUTGOING and not maze[pos[0]+opp_row][pos[1]+opp_col] == States.ALL_OUTGOING:
+    opp_pos = (pos[0]+opp_row, pos[1]+opp_col)
+
+    if not maze[pos] == dir and not maze[opp_pos] == opp_dir and \
+       not maze[pos] == States.ALL_OUTGOING and not maze[opp_pos] == States.ALL_OUTGOING:
         return False
     
     return True
