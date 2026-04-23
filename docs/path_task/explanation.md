@@ -1,264 +1,288 @@
-# PathTaskEnv (PettingZoo Parallel Environment)
+# PathTaskEnv (RLlib Multi-Agent Environment)
 
 ## Overview
 
-`PathTaskEnv` is a **multi-agent cooperative gridworld environment** implemented using the PettingZoo `ParallelEnv` API. Multiple agents move on a 2D grid and must **collaborate to complete spatially distributed tasks.** Each task requires a combination of agent traits and takes multiple timesteps to complete.
+`PathTaskEnv` is a cooperative multi-agent gridworld implemented using Ray RLlib’s `MultiAgentEnv` API. Multiple agents operate in a shared environment and must coordinate implicitly to complete spatially distributed tasks based on their trait vectors.
 
-* The environment is a **discrete-time, multi-agent MDP.**
-* Due to the nature of the `ParallelEnv` API, all agents act **simultaneously** at each timestep.
+The environment is:
+- Discrete-time
+- Partially observable
+- Multi-agent
+- Cooperative
 
 ---
 
-## Grid World
+## Environment Structure
 
-* Square grid of size:
+### Grid
 
+The environment is based on a square grid:
 ```
-field_dim × field_dim
+grid_dim = 2 * field_dim - 1
 ```
 
-* Agents and tasks occupy discrete grid cells.
-* Multiple agents **can occupy the same cell.**
-* There are **no two tasks on the same cell.**
+The internal state (`global_obs`) includes padding for local observations:
+```
+(grid_dim + 2 * obs_radius,
+ grid_dim + 2 * obs_radius,
+ 2 + 2 * num_agents)
+```
 
-### Walls
-Additionally, walls can be generated.
-* The `maze_intensity` parameter controls the amount of walls generated in the grid. 
-  * If `maze_intensity = 0`, there will be no walls at all.
-  * If `maze_intensity = 1`, it will be a perfect maze, meaning any space can be accessed from any other space (there are no walled off areas). Note that at any value of `maze_intensity`, there will be no walled off areas.
+Each cell encodes:
+```
+[is_wall,
+ is_zone,
+ agent_occupancy (num_agents),
+ agent_goals (num_agents)]
+```
+
+---
+
+## Environment Elements
+
+### Walls (Maze)
+
+- Generated via `gen_maze`
+- Controlled by `maze_intensity`
+- Ensures full connectivity of the grid
+
+### Depot
+
+- A single tile sampled from free positions
+- Used as fallback goal when agents cannot contribute to tasks
 
 ### Zone
-Additionally, zones which affect the agents can be generated.
-* A `Zone` will be generated periodically at a random position, spread for a certain amount of timesteps according to a specified probability vector and then dissappear. Only one `Zone` can be active at any time.
-* To activate the `Zone`, set `with_zone` to `True`.
-* Set `step_spread_prob` to a value between `0` and `1`. This parameter controls the probability in which the `Zone` can spread in a single timestep.
-* `max_num_spread` controls how many times a single `Zone` can spread in total.
-* `spread_probs` controls the probability for each direction the `Zone` can spread to. It is an array with 4 values.
-  * Example: `[0.25, 0.5, 0.8, 0.1]`
-  * If a `Zone` is on a tile, it has a 25% chance to spread upwards, a 50% chance to spread to the right, an 80% chance to spread downwards, and a 10% chance to spread to the left.
-  * Note that if there is a wall above the tile, the `Zone` cannot spread upwards. The same goes for the other directions.
-* `zone_dmg` controls the amount of damage (negative reward) agents receive if they are on the same tile as a `Zone`.
+
+A dynamic hazard with the following behavior:
+
+- With probability `step_spread_prob`, the zone:
+  - Spawns at a random free tile if inactive
+  - Otherwise spreads to neighboring tiles
+- Spread behavior:
+  - Controlled by directional probabilities (`dir_spread_probs`)
+  - Limited by `max_num_spread`
+- Once spreading is complete, the zone disappears
+- Agents stepping onto zone tiles receive a penalty
 
 ---
 
 ## Agents
 
-* Number of agents: `num_agents`
-* Agents are named:
-
-```
-agent_0, agent_1, ..., agent_{n-1}
-```
-
-### Agent Properties
+### Properties
 
 Each agent has:
+- Position `(x, y)`
+- Trait vector (binary, size `trait_dim`)
+- Current goal:
+  - Task index or
+  - Depot
 
-* A **position** on the grid: `(x, y)`
-* A **trait vector**: binary vector of size `trait_dim`
-
-Example:
-
+Agents are named:
 ```
-[1, 0, 1]
+agent_0, ..., agent_{n-1}
 ```
 
-Meaning that this agent possesses the trait at index 0 and 1.
+### Movement
+
+Agents act each timestep with actions mapped to directions:
+```
+0: up
+1: right
+2: down
+3: left
+```
+
+- Agents act in random order
+- Movement updates grid occupancy
+
+### Collisions
+
+- If multiple agents occupy the same tile:
+  - All involved agents receive a collision penalty
+  - Their movement is reversed
 
 ---
 
 ## Tasks
 
-Number of tasks: `num_tasks`
+### Properties
 
 Each task has:
+- Position `(x, y)`
+- Requirement vector (binary, size `trait_dim`)
+- Planned contributions
+- Actual contributions
+- Completion flag
 
-* **Position** `(x, y)`
-* **Requirement vector** (size `trait_dim`)
-* **Execution time**
-* **Reward**
-* **Execution progress**
-* **Finished flag**
-* **Trait Contribution History**
+### Initialization
 
-### Task Mechanics
+- Tasks are placed on unique free tiles
+- Requirements are randomly generated but guaranteed solvable
 
-* A task progresses only if the **combined traits of agents on its tile meet its requirements** (agents must choose "**execute task**" to contribute their trait vector).
-* Completion requires **multiple timesteps** of successful execution
-* All tasks are guaranteed to be solvable by the agents present.
-* Each time a set of agents (called coalition) contributes their trait vector to a task, their individual traits will be recorded in the task's **trait contribution history.**
+### Mechanics
 
-Note that the amount of traits of agents and requirements of tasks is determined by `trait_dim` and is the same for all agents and tasks.
+- When an agent reaches its assigned task:
+  - Its traits are added to the task’s actual contributions
+- A task is completed when its requirements are satisfied
+- Completed tasks are counted globally
 
 ---
 
-## Action Space
+## Task Assignment
 
-Each agent has a **discrete action space**:
+Goals are assigned via `get_goal`.
 
+### Strategy
+
+The task planner uses the tasks planned contributions.
+
+For each task:
+- Evaluate contribution score based on:
+  - Matching required traits
+  - Avoiding redundant traits
+- Prefer tasks where the agent meaningfully contributes
+- If an agent can complete a task alone:
+  - That task is strongly preferred
+
+Fallback:
+- If no task can be contributed to, the agent is assigned the depot
+
+---
+
+## Observations
+
+Each agent receives:
 ```
-Discrete(5)
+{"observation": 
+  {"grid_obs": ...,
+   "vec_obs": ...},
+ "action_mask": ...}
 ```
 
-| Action | Meaning      | Effect       |
-| ------ | ------------ | ------------ |
-| 0      | Move up      | (-1, 0)      |
-| 1      | Move right   | (0, +1)      |
-| 2      | Move down    | (+1, 0)      |
-| 3      | Move left    | (0, -1)      |
-| 4      | Execute task | Work on task |
+### Grid Observation (`grid_obs`)
+
+Shape:
+```
+(2 * obs_radius + 1,
+ 2 * obs_radius + 1,
+ 2 + 2 * num_agents)
+```
+
+Contents:
+- Local view centered on the agent
+- Includes:
+  - Walls
+  - Zones
+  - Agent occupancy
+  - Goal indicators
+
+Special handling:
+- Goals of other agents are removed
+- Nearby agents’ goals are reinserted and clipped to the observation window
+
+### Vector Observation (`vec_obs`)
+```
+[dx_normalized, dy_normalized, distance_to_goal]
+```
+
+- Direction from agent to goal (normalized)
+- Euclidean distance to goal
 
 ### Action Mask
 
-Each agent receives an `action_mask` that:
+Each agent has an action mask:
 
-* Prevents moving outside the grid.
-* Prevents moving against a wall.
-* Disables `execute task` if:
-
-  * Agent is not on a task tile.
-  * Task is already completed.
-
----
-
-## Observation Space
-
-Each agent observes a **dictionary consisting of a vector consisting of a one hot vector and information relative to all other agents and tasks, as well as a local view of the grid**:
-
-```
-{"vec_obs": 
- spaces.Box(low=-np.inf,
-            high=np.inf,
-            shape=(self.num_agents + 
-                   np.prod(self.agent_obs.shape) + 
-                   np.prod(self.task_obs.shape),),
-            dtype=np.float32
-            ),
- "grid_obs": 
- spaces.Box(low=-np.inf,
-            high=np.inf,
-            shape=(self.obs_radius, 
-                   self.obs_radius, 
-                   6 + int(self.with_zone)),
-            dtype=np.float32
-            )} 
-```
-
-### Structure of Vector Observation
-
-#### 1. One Hot Vector
-```
-num_agents
-```
-One hot vector that corresponds to an agent.
-
-#### 2. Relative Agent Information
-```
-num_agents * (2 + trait_dim)
-```
-Contains `dx, dy, traits`. 
-
-`dx, dy` are calculated relative to every agent.
-
-#### 3. Relative Task Information
-```
-num_tasks * (6 + 2 * trait_dim)
-```
-Contains `dx, dy, requirements, remaining_requirements, reward, execution_time, execution_progress, finished_status`. 
-
-`dx, dy` are calculated relative to every task.
-
-### Structure of Grid Observation
-
-An agent's view of the grid is determined by `obs_radius`.
-
-Example: `obs_radius = 1`
-```
-*---*---*---*
-|           |
-*   *   *   *
-| 2   3   4 |
-*   *   *   *
-| 1   A   5 |
-*---*---*---*
-  6   7   8
-```
-This agent can observe 1-8 (as well as its' own tile). Note that since 6, 7, 8 are outside of the grid, all their internal cell values would be set to `0`.
-
-#### 1. Directional Encoding
-```
-1 + 1 + 1 + 1
-```
-* `1` if the cell has an upper wall, otherwise 0.
-* `1` if the has a right wall, otherwise 0.
-* `1` if the has a bottom wall, otherwise 0.
-* `1` if the cell has a left wall, otherwise 0.
-
-#### 2. Task Information
-```
-1
-```
-`1` if a task on that cell, `0` otherwise.
-
-#### 3. Agent Information
-```
-1
-```
-`1` if an agent on that cell, `0` otherwise.
-
-#### 4. Zone Information
-```
-1
-```
-Set to `1` if the `Zone` has spread to that tile, `0` otherwise.
+- Prevents:
+  - Moving into walls
+  - Moving into occupied tiles
+  - Leaving the grid
 
 ---
 
 ## Rewards
 
-There is a configurable reward of `step_rwd` at each step. To encourage agents to not waste time with useless actions, this should be optimally a small negative value, although this can be set to any value.
+### Step Reward
 
-Rewards are also given **when a task is completed.** Agents who are on the tile at time of task completion receive the reward.
+Each timestep:
+```
+step_penalty (default: -0.3)
+```
 
-At the end of the episode, each task will calculates its' episode reward. The reward is negative and its' optimal value is 0. It aims to minimize the average wasted ability ratio on each task, while also encouraging agents to finish all tasks as quickly as possible. For its' exact implementation, please see `env/implementation/task.py` and `env/implementation/path_task.py`.
+### Distance Shaping
+
+Additional reward:
+```
+(distance_to_goal / (2 * (grid_dim - 1)))
+```
+
+Encourages agents to move toward goals
+
+### Collision Penalty
+```
+collision_penalty (default: -2)
+```
+
+Applied when agents collide
+
+### Zone Penalty
+```
+zone_penalty (default: -1)
+```
+
+Applied when agent is on a zone tile
+
+### Completion Reward
+
+When all tasks are completed:
+```
+all_tasks_finished_rwd (default: 20)
+```
+
+Given to all agents
 
 ---
 
-## Episode Termination/Truncation
+## Episode Termination
 
 ### Termination
 
 Episode ends when:
-
-* **All tasks are completed.**
+```
+num_tasks_finished == num_tasks
+```
 
 ### Truncation
 
 Episode is truncated when:
+```
+timestep == episode_length
+```
 
-* `timestep >= episode_length`
+---
+
+## Execution Flow (Step)
+
+1. Initialize rewards with step penalty
+2. Update or spawn zone
+3. Move agents (random order)
+4. Resolve collisions (revert + penalty)
+5. Apply zone penalties
+6. Process task contributions
+7. Reassign goals if needed
+8. Compute observations and action masks
+9. Add distance-based reward
+10. Check termination and truncation
 
 ---
 
 ## Rendering
 
-Optional ASCII rendering:
+ASCII-based rendering:
 
-* `A` → agent
-* `T` → unfinished task
+- Agents: colored `A`
+- Tasks: colored `T`
+- Depot: `D`
+- Walls: `#`
+- Zone tiles: colored background
 
 ---
-
-For more information, see 
-
-```
-env/path_task/implementation/path_task.py`
-```
-
-for the enviroment implementation.
-
-If you wish to configure enviroment parameters and import the enviroment, use
-
-```
-env/path_task/path_task_v0.py
-```
