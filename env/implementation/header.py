@@ -106,7 +106,7 @@ COAL_CHAR: str = "L" + Style.RESET_ALL
 TASK_CHAR: str = "T" + Style.RESET_ALL
 DEPOT_CHAR: str = Fore.YELLOW + "D" + Style.RESET_ALL
 WALL_CHAR: str = Fore.WHITE + "\u2588" + Style.RESET_ALL
-ZONE_COL: str = Back.LIGHTCYAN_EX
+ZONE_COL: str = Back.LIGHTRED_EX
 ## RENDERING VARS AND METHODS
 
 # methods

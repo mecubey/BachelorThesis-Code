@@ -35,7 +35,8 @@ class PathTaskEnv(MultiAgentEnv):
                                           agent_occ_e=2+self.args.num_agents,
                                           agent_goal_b=2+self.args.num_agents,
                                           agent_goal_e=2+2*self.args.num_agents)
-        self.grid_dim = 2*args.field_dim-1
+        self.grid_dim: int = 2*args.field_dim-1
+        self.max_goal_dist: int = 2*(self.grid_dim-1)
 
         # for a single cell:
         # no_wall (1),
@@ -158,7 +159,18 @@ class PathTaskEnv(MultiAgentEnv):
         self.agent_positions[a_idx] += direction
         self.set_agent_occ_grid(a_idx, self.agent_positions[a_idx], True)
 
-    def get_agent_obs(self, a_idx: int) -> tuple[dict[str, h.FloatArr], h.DTYPE_FLOAT]:
+    def get_vec_obs(self, a_idx: int) -> tuple[h.FloatArr, h.DTYPE_FLOAT]:
+        """
+        Return vector obsevations (unit vector to goal and euclidean distance).
+        """
+        goal_vec: h.FloatArr = self.env_agents[a_idx].goal_pos - self.agent_positions[a_idx]
+        goal_distance: h.DTYPE_FLOAT = (np.linalg.norm(goal_vec)+h.EPSILON).astype(h.DTYPE_FLOAT)
+        return goal_vec, goal_distance
+
+    def get_agent_obs(self, *,
+                      a_idx: int,
+                      unit_vec: h.FloatArr,
+                      dist: h.DTYPE_FLOAT) -> dict[str, h.FloatArr]:
         """
         Assuming the enviroment is in state s, get observation of agent a_idx of state s.
         """
@@ -188,12 +200,9 @@ class PathTaskEnv(MultiAgentEnv):
             clipped_goal_pos -= (self.agent_positions[a_idx]-self.observation_offset)
             grid_obs[*clipped_goal_pos, self.grid_offsets.agent_goal_b+n] = 1
 
-        goal_vec: h.FloatArr = self.env_agents[a_idx].goal_pos - self.agent_positions[a_idx]
-        goal_distance: h.DTYPE_FLOAT = np.linalg.norm(goal_vec)+h.EPSILON
-
         return {"grid_obs": grid_obs,
-                "vec_obs": np.concatenate([goal_vec/goal_distance, 
-                                           np.array([goal_distance])], axis=0)}, goal_distance
+                "vec_obs": np.concatenate([unit_vec / dist, 
+                                           np.array([dist])], axis=0)}
 
     def set_infos(self, infos: dict[str, Any]):
         """
@@ -311,7 +320,11 @@ class PathTaskEnv(MultiAgentEnv):
         # don't need to randomly iterate because we are assigning obs
         for i in range(self.args.num_agents):
             self.env_agents[i].edit_mask(self.walkable, self.agent_positions[i])
-            observations[self.agent_names[i]] = {"observation": self.get_agent_obs(i)[0],
+            unit_vec, dist = self.get_vec_obs(i)
+            observations[self.agent_names[i]] = {"observation":
+                                                 self.get_agent_obs(a_idx=i,
+                                                                    unit_vec=unit_vec,
+                                                                    dist=dist),
                                                  "action_mask": self.env_agents[i].mask}
 
         if self.args.render_mode == "human":
@@ -399,12 +412,15 @@ class PathTaskEnv(MultiAgentEnv):
         observations: dict[str, dict[str, dict[str, h.FloatArr]|h.BoolArr]] = {}
         for i in range(self.args.num_agents):
             self.env_agents[i].edit_mask(self.walkable, self.agent_positions[i])
-            obs, dist = self.get_agent_obs(i)
-            observations[self.agent_names[i]] = {"observation": obs,
+            unit_vec, dist = self.get_vec_obs(i)
+            observations[self.agent_names[i]] = {"observation":
+                                                 self.get_agent_obs(a_idx=i,
+                                                                    unit_vec=unit_vec,
+                                                                    dist=dist),
                                                  "action_mask": self.env_agents[i].mask}
 
             # negative normalized distance to goal is added to reward
-            rewards[self.agent_names[i]] += -(h.DTYPE_FLOAT(dist / (2*(self.grid_dim-1))))
+            rewards[self.agent_names[i]] += -(dist / self.max_goal_dist).astype(h.DTYPE_FLOAT)
 
         env_termination = False
         if self.num_tasks_finished == self.args.num_tasks:

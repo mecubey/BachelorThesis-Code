@@ -11,10 +11,10 @@ docs/path_task/explanation.md
 For the implementation, see
 
 ```
-env/implementation/path_task.py
+env/implementation/path_task_env.py
 ```
 
 To use that enviroment, import
 ```
-env/path_task_v0.py
+env/path_task_env_v0.py
 ```
