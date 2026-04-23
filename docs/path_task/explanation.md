@@ -42,27 +42,27 @@ Each cell encodes:
 
 ### Walls (Maze)
 
-- Generated via `gen_maze`
-- Controlled by `maze_intensity`
-- Ensures full connectivity of the grid
+- Generated via `gen_maze`.
+- Controlled by `maze_intensity`.
+- Ensures full connectivity of the grid.
 
 ### Depot
 
-- A single tile sampled from free positions
-- Used as fallback goal when agents cannot contribute to tasks
+- A single tile sampled from free positions.
+- Used as fallback goal when agents cannot contribute to tasks.
 
 ### Zone
 
 A dynamic hazard with the following behavior:
 
 - With probability `step_spread_prob`, the zone:
-  - Spawns at a random free tile if inactive
-  - Otherwise spreads to neighboring tiles
+  - Spawns at a random free tile if inactive.
+  - Otherwise spreads to neighboring tiles.
 - Spread behavior:
-  - Controlled by directional probabilities (`dir_spread_probs`)
-  - Limited by `max_num_spread`
-- Once spreading is complete, the zone disappears
-- Agents stepping onto zone tiles receive a penalty
+  - Controlled by directional probabilities (`dir_spread_probs`).
+  - Limited by `max_num_spread`.
+- Once spreading is complete, the zone disappears.
+- Agents stepping onto zone tiles receive a penalty.
 
 ---
 
@@ -90,16 +90,17 @@ Agents act each timestep with actions mapped to directions:
 1: right
 2: down
 3: left
+4: don't move
 ```
 
-- Agents act in random order
-- Movement updates grid occupancy
+- Agents act in random order.
+- Movement updates grid occupancy.
 
 ### Collisions
 
 - If multiple agents occupy the same tile:
-  - All involved agents receive a collision penalty
-  - Their movement is reversed
+  - All involved agents receive a collision penalty.
+  - Their movement is reversed.
 
 ---
 
@@ -116,15 +117,15 @@ Each task has:
 
 ### Initialization
 
-- Tasks are placed on unique free tiles
-- Requirements are randomly generated but guaranteed solvable
+- Tasks are placed on unique free tiles.
+- Requirements are randomly generated but guaranteed solvable.
 
 ### Mechanics
 
 - When an agent reaches its assigned task:
-  - Its traits are added to the task’s actual contributions
-- A task is completed when its requirements are satisfied
-- Completed tasks are counted globally
+  - Its traits are added to the task’s actual contributions.
+- A task is completed when its requirements are satisfied.
+- Completed tasks are counted globally.
 
 ---
 
@@ -138,14 +139,14 @@ The task planner uses the tasks planned contributions.
 
 For each task:
 - Evaluate contribution score based on:
-  - Matching required traits
-  - Avoiding redundant traits
-- Prefer tasks where the agent meaningfully contributes
-- If an agent can complete a task alone:
-  - That task is strongly preferred
+  - Matching required traits.
+  - Avoiding redundant traits.
+- Prefer tasks where the agent meaningfully contributes.
+- If an agent's contribution would finish a task:
+  - That task is strongly preferred.
 
 Fallback:
-- If no task can be contributed to, the agent is assigned the depot
+- If no task can be contributed to, the agent is assigned the depot.
 
 ---
 
@@ -169,7 +170,7 @@ Shape:
 ```
 
 Contents:
-- Local view centered on the agent
+- Local view centered on the agent.
 - Includes:
   - Walls
   - Zones
@@ -177,25 +178,25 @@ Contents:
   - Goal indicators
 
 Special handling:
-- Goals of other agents are removed
-- Nearby agents’ goals are reinserted and clipped to the observation window
+- Goals of other agents are removed.
+- Nearby agents’ goals are reinserted and clipped to the observation window.
 
 ### Vector Observation (`vec_obs`)
 ```
 [dx_normalized, dy_normalized, distance_to_goal]
 ```
 
-- Direction from agent to goal (normalized)
-- Euclidean distance to goal
+- Direction from agent to goal (normalized).
+- Euclidean distance to goal.
 
 ### Action Mask
 
 Each agent has an action mask:
 
 - Prevents:
-  - Moving into walls
-  - Moving into occupied tiles
-  - Leaving the grid
+  - Moving into walls.
+  - Moving into occupied tiles.
+  - Leaving the grid.
 
 ---
 
@@ -215,21 +216,21 @@ Additional reward:
 (distance_to_goal / (2 * (grid_dim - 1)))
 ```
 
-Encourages agents to move toward goals
+Encourages agents to move toward goals.
 
 ### Collision Penalty
 ```
 collision_penalty (default: -2)
 ```
 
-Applied when agents collide
+Applied when agents collide.
 
 ### Zone Penalty
 ```
 zone_penalty (default: -1)
 ```
 
-Applied when agent is on a zone tile
+Applied when agent is on a zone tile.
 
 ### Completion Reward
 
@@ -238,7 +239,7 @@ When all tasks are completed:
 all_tasks_finished_rwd (default: 20)
 ```
 
-Given to all agents
+Given to all agents.
 
 ---
 
@@ -262,16 +263,16 @@ timestep == episode_length
 
 ## Execution Flow (Step)
 
-1. Initialize rewards with step penalty
-2. Update or spawn zone
-3. Move agents (random order)
-4. Resolve collisions (revert + penalty)
-5. Apply zone penalties
-6. Process task contributions
-7. Reassign goals if needed
-8. Compute observations and action masks
-9. Add distance-based reward
-10. Check termination and truncation
+1. Initialize rewards with step penalty.
+2. Update or spawn zone.
+3. Move agents (random order).
+4. Resolve collisions (revert + penalty).
+5. Apply zone penalties.
+6. Process task contributions.
+7. Reassign goals if needed.
+8. Compute observations and action masks.
+9. Add distance-based reward.
+10. Check termination and truncation.
 
 ---
 

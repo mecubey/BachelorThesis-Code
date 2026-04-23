@@ -54,6 +54,7 @@ class PathTaskEnv(MultiAgentEnv):
         self.step_penalty: h.DTYPE_FLOAT = h.DTYPE_FLOAT(-0.3)
         self.collision_penalty: h.DTYPE_FLOAT = h.DTYPE_FLOAT(-2)
         self.zone_penalty: h.DTYPE_FLOAT = h.DTYPE_FLOAT(-1)
+        # step() also adds negative distance to goal to reward
 
         # AGENTS
         self.agent_idx = list(range(args.num_agents))

@@ -8,17 +8,17 @@ import implementation.header as h
 from implementation.path_task_env import PathTaskEnv
 
 params = h.EnvParams(
-    num_agents=4,
-    num_tasks=1,
+    num_agents=7,
+    num_tasks=10,
     obs_radius=2,
-    agent_capability=0,
-    maze_intensity=0,
+    agent_capability=0.3,
+    maze_intensity=0.7,
     step_spread_prob=0.6,
     max_num_spread=5,
     dir_spread_probs=[0.6, 0.7, 0.55, 0.8],
     trait_dim=5,
     episode_length=150,
-    field_dim=2,
+    field_dim=10,
     render_mode="human",
     delay_btw_frames=0,
     with_debug_infos=True
@@ -48,7 +48,6 @@ if __name__ == "__main__":
                         for agent in env.agents}
                 observations, rewards, terminations, truncations, infos = env.step(actions)
                 done = terminations["__all__"] or truncations["__all__"]
-                print(rewards)
                 input()
 
             env.close()
