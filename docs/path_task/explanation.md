@@ -25,15 +25,15 @@ The internal state (`global_obs`) includes padding for local observations:
 ```
 (grid_dim + 2 * obs_radius,
  grid_dim + 2 * obs_radius,
- 2 + 2 * num_agents)
+ 4)
 ```
 
 Each cell encodes:
 ```
 [is_wall,
  is_zone,
- agent_occupancy (num_agents),
- agent_goals (num_agents)]
+ is_agent,
+ is_goal]
 ```
 
 ---
@@ -166,7 +166,7 @@ Shape:
 ```
 (2 * obs_radius + 1,
  2 * obs_radius + 1,
- 2 + 2 * num_agents)
+ 4)
 ```
 
 Contents:
@@ -174,8 +174,8 @@ Contents:
 - Includes:
   - Walls
   - Zones
-  - Agent occupancy
-  - Goal indicators
+  - Agents
+  - Goals
 
 Special handling:
 - Goals of other agents are removed.
@@ -196,7 +196,6 @@ Each agent has an action mask:
 - Prevents:
   - Moving into walls.
   - Moving into occupied tiles.
-  - Leaving the grid.
 
 ---
 
@@ -217,6 +216,7 @@ Additional reward:
 ```
 
 Encourages agents to move toward goals.
+Here `(2 * (grid_dim - 1))` represents the maximum distance to a goal an agent could have.
 
 ### Collision Penalty
 ```
