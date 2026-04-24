@@ -4,8 +4,9 @@ Contains the implementation of the PathTask enviroment.
 
 import time
 from typing import Any, cast
+from gymnasium import spaces
 from ray.rllib.env.multi_agent_env import MultiAgentEnv
-from ray.rllib.utils.typing import MultiAgentDict
+from ray.rllib.utils.typing import MultiAgentDict, AgentID
 import numpy as np
 from .env_agent import EnvAgent
 from .task import Task
@@ -29,23 +30,21 @@ class PathTaskEnv(MultiAgentEnv):
         self.observation_offset: h.PositionT = np.array([args.obs_radius,
                                                          args.obs_radius],
                                                         dtype=h.DTYPE_INT)
-        self.grid_offsets = h.GridOffsets(is_wall=0,
-                                          is_zone=1,
-                                          agent_occ_b=2,
-                                          agent_occ_e=2+self.args.num_agents,
-                                          agent_goal_b=2+self.args.num_agents,
-                                          agent_goal_e=2+2*self.args.num_agents)
+        self.grid_offsets = h.GridOffsets(wall=0,
+                                          zone=1,
+                                          agent=2,
+                                          goal=3)
         self.grid_dim: int = 2*args.field_dim-1
         self.max_goal_dist: int = 2*(self.grid_dim-1)
 
         # for a single cell:
         # no_wall (1),
         # is_zone (1),
-        # which_agents (num_agents),
-        # whose_goal (num_agents)
+        # is_agent (1),
+        # is_goal (1)
         self.global_obs: h.FloatArr = np.zeros((self.grid_dim + 2*args.obs_radius,
                                                 self.grid_dim + 2*args.obs_radius,
-                                                2+2*self.args.num_agents),
+                                                4),
                                                dtype=h.DTYPE_FLOAT)
         self.free_tiles: h.IntArr
 
@@ -54,16 +53,15 @@ class PathTaskEnv(MultiAgentEnv):
         self.step_penalty: h.DTYPE_FLOAT = h.DTYPE_FLOAT(-0.3)
         self.collision_penalty: h.DTYPE_FLOAT = h.DTYPE_FLOAT(-2)
         self.zone_penalty: h.DTYPE_FLOAT = h.DTYPE_FLOAT(-1)
+        # maybe reward upon completing a task?
         # step() also adds negative distance to goal to reward
 
         # AGENTS
         self.agent_idx = list(range(args.num_agents))
         self.agent_colors: list[str] = [h.rand_color(self.rng) for _ in range(self.args.num_agents)]
-        self.agent_names = [f"agent_{i}" for i in self.agent_idx]
         self.agents = self.possible_agents = [f"agent_{i}" for i in self.agent_idx]
         self.agent_positions: h.IntArr # much more efficient to calculate dx, dy this way
-        agent_one_hots: h.FloatArr = np.eye(self.args.num_agents, dtype=h.DTYPE_FLOAT)
-        self.env_agents: list[EnvAgent] = [EnvAgent(agent_one_hots[i], i) for i in self.agent_idx]
+        self.env_agents: list[EnvAgent] = [EnvAgent() for _ in self.agent_idx]
         self.depot_position: h.PositionT
 
         # TASKS
@@ -75,94 +73,64 @@ class PathTaskEnv(MultiAgentEnv):
         self.zone = Zone(dir_spread_probs=args.dir_spread_probs,
                          max_num_spread=args.max_num_spread)
 
-    def inside_grid(self, pos: h.PositionT) -> bool:
-        """
-        Returns true if the given position is inside the inner grid.\n
-        False otherwise.
-        """
-        return bool((self.args.obs_radius <= pos).all() and \
-                    (pos < self.args.obs_radius+self.grid_dim).all())
-
-    def no_wall(self, pos: h.PositionT) -> bool:
+    def on_no_wall(self, pos: h.PositionT) -> bool:
         """
         Returns true if there is no wall on the given position.\n
         False otherwise.
         """
-        return self.global_obs[*pos, self.grid_offsets.is_wall]
+        return self.global_obs[*pos, self.grid_offsets.wall]
 
     def on_zone(self, pos: h.PositionT) -> bool:
         """
         Returns true if there is a zone on the given position.\n
         False otherwise.
         """
-        return self.global_obs[*pos, self.grid_offsets.is_zone]
+        return self.global_obs[*pos, self.grid_offsets.zone]
+
+    def on_agent(self, pos: h.PositionT) -> bool:
+        """
+        Returns true if there is an agent on the given position.\n
+        False otherwise.
+        """
+        return self.global_obs[*pos, self.grid_offsets.agent]
 
     def set_zone_grid(self, pos: h.PositionT, val: bool) -> None:
         """
-        Sets zone on the specified position.
+        Sets/Removes zone on the specified position inside the grid.
         """
-        self.global_obs[*pos, 1] = val
+        self.global_obs[*pos, self.grid_offsets.zone] = val
 
-    def agent_count_on(self, pos: h.PositionT) -> h.DTYPE_FLOAT:
+    def set_agent_grid(self, pos: h.PositionT, val: bool) -> None:
         """
-        Returns amount of agents on the given position.
+        Sets/Removes agent on the specified position inside the grid.
         """
-        return np.sum(self.global_obs[*pos, self.grid_offsets.agent_occ_b:
-                                            self.grid_offsets.agent_occ_e])
+        self.global_obs[*pos, self.grid_offsets.agent] = val
 
-    def agents_on(self, pos: h.PositionT) -> h.IntArr:
+    def set_goal_grid(self, pos: h.PositionT, val: bool) -> None:
         """
-        Returns indices of agents on the given position.
+        Sets/Removes goal on the specified position inside the grid.
         """
-        return np.where(self.global_obs[*pos, self.grid_offsets.agent_occ_b:
-                                              self.grid_offsets.agent_occ_e] == 1)[0]
-
-    def set_agent_occ_grid(self, a_idx: int, pos: h.PositionT, val: bool) -> None:
-        """
-        Sets agent occupation inside of grid on a given position 
-        (occupation changes upon entry/exit of cell).
-        """
-        self.global_obs[*pos, self.grid_offsets.agent_occ_b+a_idx] = val
-
-    def is_agent_goal_on(self, a_idx: int, pos: h.PositionT) -> bool:
-        """
-        Returns true if the agent's goal is on the given position.\n
-        False otherwise.
-        """
-        return self.global_obs[*pos, self.grid_offsets.agent_goal_b+a_idx]
-
-    def set_agent_goal_grid(self, a_idx: int, goal: int, want_to_contribute: bool) -> None:
-        """
-        Sets/Removes agent's goal inside of grid. Also contributes agent's trait to task's
-        plan requirements if setting goal.
-        """
-        if goal == h.AGENT_DEPOT:
-            self.global_obs[*self.depot_position,
-                            self.grid_offsets.agent_goal_b+a_idx] = want_to_contribute
-        else:
-            self.global_obs[*self.tasks[goal].position,
-                            self.grid_offsets.agent_goal_b+a_idx] = want_to_contribute
-            if want_to_contribute:
-                self.tasks[goal].contribute_to_plan(self.env_agents[a_idx].traits)
+        self.global_obs[*pos, self.grid_offsets.goal] = val
 
     def walkable(self, pos: h.PositionT) -> bool:
         """
         Returns true if this agent could stand on a given position.\n
         False otherwise.
         """
-        return self.no_wall(pos) and self.agent_count_on(pos) == 0
+        # tile cannot contain wall or another agent
+        return self.on_no_wall(pos) and not self.on_agent(pos)
 
     def move_agent(self, *, a_idx: int, direction: h.PositionT) -> None:
         """
         Moves agent according to a specified direction.
         """
-        self.set_agent_occ_grid(a_idx, self.agent_positions[a_idx], False)
+        self.set_agent_grid(self.agent_positions[a_idx], False)
         self.agent_positions[a_idx] += direction
-        self.set_agent_occ_grid(a_idx, self.agent_positions[a_idx], True)
+        self.set_agent_grid(self.agent_positions[a_idx], True)
 
     def get_vec_obs(self, a_idx: int) -> tuple[h.FloatArr, h.DTYPE_FLOAT]:
         """
-        Return vector obsevations (unit vector to goal and euclidean distance).
+        Return vector observations (unit vector to goal and euclidean distance).
         """
         goal_vec: h.FloatArr = self.env_agents[a_idx].goal_pos - self.agent_positions[a_idx]
         goal_distance: h.DTYPE_FLOAT = (np.linalg.norm(goal_vec)+h.EPSILON).astype(h.DTYPE_FLOAT)
@@ -182,8 +150,8 @@ class PathTaskEnv(MultiAgentEnv):
         grid_obs: h.FloatArr = self.global_obs[begin_obs_radius[0]:end_obs_radius[0],
                                                begin_obs_radius[1]:end_obs_radius[1]].copy()
 
-        # zero out goals of other agents (only neighbour goals)
-        grid_obs[..., -self.args.num_agents:] = 0
+        # zero out all goals of agents (only want neighbour goals)
+        grid_obs[..., self.grid_offsets.goal] = 0
 
         # get indices of agents that are inside local observation
         # use chebyshev distance
@@ -199,13 +167,13 @@ class PathTaskEnv(MultiAgentEnv):
                                        self.agent_positions[a_idx]-self.args.obs_radius,
                                        self.agent_positions[a_idx]+self.args.obs_radius)
             clipped_goal_pos -= (self.agent_positions[a_idx]-self.observation_offset)
-            grid_obs[*clipped_goal_pos, self.grid_offsets.agent_goal_b+n] = 1
+            grid_obs[*clipped_goal_pos, self.grid_offsets.goal] = 1
 
         return {"grid_obs": grid_obs,
                 "vec_obs": np.concatenate([unit_vec / dist, 
                                            np.array([dist])], axis=0)}
 
-    def set_infos(self, infos: dict[str, Any]):
+    def set_infos(self, infos: dict[AgentID, Any]):
         """
         Given an empty infos dictionary, sets its infos accordingly to env state.
         """
@@ -219,7 +187,7 @@ class PathTaskEnv(MultiAgentEnv):
                                          self.depot_position).all() \
                                      else self.task_colors[self.env_agents[i].goal_idx] + \
                                           h.TASK_CHAR
-            infos[self.agent_names[i]] = self.env_agents[i].to_dict(pos=self.agent_positions[i],
+            infos[self.agents[i]] = self.env_agents[i].to_dict(pos=self.agent_positions[i],
                                                                     color=self.agent_colors[i],
                                                                     goal_char=goal_char)
         infos["depot_position"] = self.depot_position.tolist()
@@ -300,7 +268,7 @@ class PathTaskEnv(MultiAgentEnv):
         for i in h.randomly(self.agent_idx, self.rng):
             i = cast(int, i)
 
-            self.set_agent_occ_grid(i, self.agent_positions[i], True)
+            self.set_agent_grid(self.agent_positions[i], True)
 
             self.env_agents[i].set_traits(agent_traits[i])
 
@@ -308,31 +276,33 @@ class PathTaskEnv(MultiAgentEnv):
                                  agent_trait=agent_traits[i],
                                  num_tasks=self.args.num_tasks,
                                  tasks=self.tasks)
-            self.set_agent_goal_grid(i, goal, True)
             self.env_agents[i].set_goal(new_goal_idx=goal,
                                         tasks=self.tasks,
                                         depot_pos=self.depot_position)
+            self.set_goal_grid(self.env_agents[i].goal_pos, True)
 
-        infos: dict[str, Any] = {}
+            if goal != h.AGENT_DEPOT:
+                self.tasks[goal].contribute_to_plan(self.env_agents[i].traits)
+
+        infos: dict[AgentID, Any] = {}
         if self.args.with_debug_infos:
             self.set_infos(infos)
 
-        observations: dict[str, dict[str, dict[str, h.FloatArr]|h.BoolArr]] = {}
+        observations: dict[AgentID, dict[str, dict[str, h.FloatArr]|h.FloatArr]] = {}
         # don't need to randomly iterate because we are assigning obs
         for i in range(self.args.num_agents):
             self.env_agents[i].edit_mask(self.walkable, self.agent_positions[i])
             unit_vec, dist = self.get_vec_obs(i)
-            observations[self.agent_names[i]] = {"observation":
-                                                 self.get_agent_obs(a_idx=i,
-                                                                    unit_vec=unit_vec,
-                                                                    dist=dist),
-                                                 "action_mask": self.env_agents[i].mask}
+            observations[self.agents[i]] = {"observation":
+                                            self.get_agent_obs(a_idx=i,
+                                                               unit_vec=unit_vec,
+                                                               dist=dist),
+                                            "action_mask": self.env_agents[i].mask}
 
         if self.args.render_mode == "human":
             self.render()
             time.sleep(self.args.delay_btw_frames)
 
-        # return observation dict and infos dict.
         return observations, infos # type: ignore
 
     def step(self, action_dict: MultiAgentDict) -> tuple[MultiAgentDict,  # obs dict
@@ -340,7 +310,7 @@ class PathTaskEnv(MultiAgentEnv):
                                                          MultiAgentDict,  # term dict
                                                          MultiAgentDict,  # trunc dict
                                                          MultiAgentDict]: # infos dict
-        rewards: dict[str, h.DTYPE_FLOAT] = {a: self.step_penalty for a in self.agent_names}
+        rewards: dict[AgentID, h.DTYPE_FLOAT] = {a: self.step_penalty for a in self.agents}
 
         # if the probability of zone spreading hits
         if self.rng.random() < self.args.step_spread_prob:
@@ -356,33 +326,34 @@ class PathTaskEnv(MultiAgentEnv):
                 else:
                     spread_tiles: list[h.PositionT] = self.zone.spread(rng=self.rng,
                                                                        on_zone=self.on_zone,
-                                                                       no_wall=self.no_wall,
-                                                                       inside_grid=self.inside_grid)
+                                                                       no_wall=self.on_no_wall)
                     for tile_pos in spread_tiles: # set zone inside grid
                         self.set_zone_grid(tile_pos, True)
 
+        # each agent executes its action
         for i in h.randomly(self.agent_idx, self.rng):
-            self.move_agent(a_idx=i, direction=h.Act_To_Dir[action_dict[self.agent_names[i]]])
+            self.move_agent(a_idx=i, direction=h.Act_To_Dir[action_dict[self.agents[i]]])
 
         # check for collisions
         # check for goal completion status
         for i in self.agent_idx:
-            collidees: h.IntArr = self.agents_on(self.agent_positions[i])
+            collidees: h.IntArr = np.where((self.agent_positions ==
+                                            self.agent_positions[i]).all(axis=1))[0]
 
             # agent collides if more than one agent on agent's cell
             if len(collidees) > 1:
                 for c in collidees: # we move all the colliding agents back
                     c = cast(int, c)
                     # punish agent for colliding
-                    rewards[self.agent_names[c]] = self.collision_penalty
+                    rewards[self.agents[c]] = self.collision_penalty
 
                     # reverse last action
                     self.move_agent(a_idx=c,
-                                    direction=h.reverse_dir(action_dict[self.agent_names[c]]))
+                                    direction=h.reverse_dir(action_dict[self.agents[c]]))
 
             # agents should not step into zones
             if self.on_zone(self.agent_positions[i]):
-                rewards[self.agent_names[i]] += self.zone_penalty
+                rewards[self.agents[i]] += self.zone_penalty
 
             if self.env_agents[i].on_goal(self.agent_positions[i]):
                 # we don't contribute anything to depot
@@ -396,32 +367,40 @@ class PathTaskEnv(MultiAgentEnv):
                 if self.tasks[self.env_agents[i].goal_idx].is_finished:
                     self.num_tasks_finished += 1
 
-                # agent has contributes to that task (reached goal),
+                # agent has contributed to that task (reached goal),
                 # now agent needs a new goal
                 new_goal_idx: int = get_goal(trait_dim=self.args.trait_dim,
                                              agent_trait=self.env_agents[i].traits,
                                              num_tasks=self.args.num_tasks,
                                              tasks=self.tasks)
 
-                # set new goal in grid
-                self.set_agent_goal_grid(i, self.env_agents[i].goal_idx, False)
+                # remove old goal from grid
+                self.set_goal_grid(self.env_agents[i].goal_pos, False)
+
+                # set new goal of agent
                 self.env_agents[i].set_goal(new_goal_idx=new_goal_idx,
                                             tasks=self.tasks,
                                             depot_pos=self.depot_position)
-                self.set_agent_goal_grid(i, self.env_agents[i].goal_idx, True)
 
-        observations: dict[str, dict[str, dict[str, h.FloatArr]|h.BoolArr]] = {}
+                # set new goal in grid
+                self.set_goal_grid(self.env_agents[i].goal_pos, True)
+
+                # contribute to plan requirements
+                if self.env_agents[i].goal_idx != h.AGENT_DEPOT:
+                    self.tasks[new_goal_idx].contribute_to_plan(self.env_agents[i].traits)
+
+        observations: dict[AgentID, dict[str, dict[str, h.FloatArr]|h.FloatArr]] = {}
         for i in range(self.args.num_agents):
             self.env_agents[i].edit_mask(self.walkable, self.agent_positions[i])
             unit_vec, dist = self.get_vec_obs(i)
-            observations[self.agent_names[i]] = {"observation":
-                                                 self.get_agent_obs(a_idx=i,
-                                                                    unit_vec=unit_vec,
-                                                                    dist=dist),
-                                                 "action_mask": self.env_agents[i].mask}
+            observations[self.agents[i]] = {"observation":
+                                             self.get_agent_obs(a_idx=i,
+                                                                unit_vec=unit_vec,
+                                                                dist=dist),
+                                            "action_mask": self.env_agents[i].mask}
 
             # negative normalized distance to goal is added to reward
-            rewards[self.agent_names[i]] += -(dist / self.max_goal_dist).astype(h.DTYPE_FLOAT)
+            rewards[self.agents[i]] += -(dist / self.max_goal_dist).astype(h.DTYPE_FLOAT)
 
         env_termination = False
         if self.num_tasks_finished == self.args.num_tasks:
@@ -429,7 +408,7 @@ class PathTaskEnv(MultiAgentEnv):
 
             # we finished the episode by finishing all tasks, so reward agents
             for i in self.agent_idx:
-                rewards[self.agent_names[i]] = self.all_tasks_finished_rwd
+                rewards[self.agents[i]] = self.all_tasks_finished_rwd
         terminations = {"__all__": env_termination}
 
         env_truncation = False
@@ -437,7 +416,7 @@ class PathTaskEnv(MultiAgentEnv):
             env_truncation = True
         truncations = {"__all__": env_truncation}
 
-        infos: dict[str, Any] = {}
+        infos: dict[AgentID, Any] = {}
         if self.args.with_debug_infos:
             self.set_infos(infos)
 
@@ -465,25 +444,25 @@ class PathTaskEnv(MultiAgentEnv):
                     tmp_zone_char = h.ZONE_COL
 
                 # if agent on tile
-                if self.agent_count_on(pos) == 1:
+                if self.on_agent(pos):
                     a_idx: int = np.where((self.agent_positions == pos).all(axis=1))[0][0]
                     print(tmp_zone_char + self.agent_colors[a_idx] + h.AGENT_CHAR, end="")
                     continue
 
-                # print if task on tile
+                # if task on tile
                 if (task_positions == pos).all(axis=1).any():
                     t_idx: int = np.where((task_positions == pos).all(axis=1))[0][0]
                     if not self.tasks[t_idx].is_finished:
                         print(tmp_zone_char + self.task_colors[t_idx] + h.TASK_CHAR, end="")
                         continue
 
-                # print if depot on tile
+                # if depot on tile
                 if (self.depot_position == pos).all():
                     print(tmp_zone_char + h.DEPOT_CHAR, end="")
                     continue
 
-                # print if wall on tile
-                if not self.no_wall(np.array(pos)):
+                # if wall on tile
+                if not self.on_no_wall(np.array(pos)):
                     print(tmp_zone_char + h.WALL_CHAR, end="")
                     continue
 
@@ -491,3 +470,32 @@ class PathTaskEnv(MultiAgentEnv):
                 print(tmp_zone_char + " " + h.Style.RESET_ALL, end="")
 
             print()
+
+    def get_observation_space(self, agent_id: AgentID = "agent_0") -> spaces.Dict:
+        grid_size = 2 * self.args.obs_radius + 1
+
+        return spaces.Dict({
+            "observation": spaces.Dict({
+                "grid_obs": spaces.Box(
+                    low=-np.inf,
+                    high=np.inf,
+                    shape=(grid_size, grid_size, 4),
+                    dtype=h.DTYPE_FLOAT
+                ),
+                "vec_obs": spaces.Box(
+                    low=-np.inf,
+                    high=np.inf,
+                    shape=(3,),
+                    dtype=h.DTYPE_FLOAT
+                ),
+            }),
+            "action_mask": spaces.Box(
+                low=0,
+                high=1,
+                shape=(5,),
+                dtype=h.DTYPE_FLOAT
+            ),
+        })
+
+    def get_action_space(self, agent_id: AgentID = "agent_0"): # type: ignore
+        return spaces.Discrete(5) # type: ignore

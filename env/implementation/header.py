@@ -49,12 +49,10 @@ class GridOffsets:
     """
     Holds offsets used to assign values to grid cells in observations.
     """
-    is_wall: int
-    is_zone: int
-    agent_occ_b: int
-    agent_occ_e: int
-    agent_goal_b: int
-    agent_goal_e: int
+    wall: int
+    zone: int
+    agent: int
+    goal: int
 
 # constants
 EPSILON = 1e-16

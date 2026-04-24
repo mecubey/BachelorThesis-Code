@@ -33,8 +33,7 @@ class Zone():
     def spread(self, *,
                rng: np.random.Generator,
                on_zone: Callable[[h.PositionT], bool],
-               no_wall: Callable[[h.PositionT], bool],
-               inside_grid: Callable[[h.PositionT], bool]) -> list[h.PositionT]:
+               no_wall: Callable[[h.PositionT], bool]) -> list[h.PositionT]:
         """
         Randomly spread a zone tile. A zone tile can only spread to its
         neighbouring tiles. Note that this does not modify the actual grid.
@@ -54,8 +53,7 @@ class Zone():
                 # cannot spread if new_pos is outside grid
                 if on_zone(new_pos) or \
                    rng.random() > self.dir_spread_probs[i] or \
-                   not no_wall(new_pos) or \
-                   not inside_grid(new_pos):
+                   not no_wall(new_pos):
                     continue
 
                 newly_occupied_tiles.append(new_pos)

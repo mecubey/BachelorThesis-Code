@@ -14,12 +14,10 @@ class EnvAgent():
     Note that this class does not contain the actual policy, but is simply
     used as a sort of container class for agent attributes.
     """
-    def __init__(self, one_hot: h.IntArr, agent_id: int):
+    def __init__(self):
         self.traits: h.IntArr
-        self.mask: h.BoolArr = np.ones(h.ACTION_LEN, dtype=h.DTYPE_BOOL)
+        self.mask: h.FloatArr = np.ones(h.ACTION_LEN, dtype=h.DTYPE_FLOAT)
         self.goal_pos: h.PositionT
-        self.one_hot: h.IntArr = one_hot
-        self.agent_id: int = agent_id
         self.goal_idx: int
 
     def to_dict(self, *, pos: h.PositionT, color: str, goal_char: str) -> dict[str, Any]:

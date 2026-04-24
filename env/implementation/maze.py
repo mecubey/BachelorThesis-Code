@@ -92,7 +92,7 @@ def gen_maze(*,
             cell = maze_graph[*maze_graph_pos]
 
             # open cell centers
-            maze_buffer[*(maze_pos+obs_radius), offsets.is_wall] = 1
+            maze_buffer[*(maze_pos+obs_radius), offsets.wall] = 1
             free_tiles.append(maze_pos+obs_radius)
 
             if cell == h.ALL_OUTGOING:
@@ -104,7 +104,7 @@ def gen_maze(*,
                 new_pos: h.PositionT = maze_pos+h.Act_To_Dir_Arr[d]
                 if 0 <= new_pos[0] < exp_dim and 0 <= new_pos[1] < exp_dim:
                     # remove wall between cells
-                    maze_buffer[*(new_pos+obs_radius), offsets.is_wall] = 1
+                    maze_buffer[*(new_pos+obs_radius), offsets.wall] = 1
                     free_tiles.append(new_pos+obs_radius)
 
     return np.unique(np.array(free_tiles, dtype=h.DTYPE_INT), axis=0) # remove duplicates
