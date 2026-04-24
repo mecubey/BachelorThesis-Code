@@ -5,7 +5,7 @@ Contains the implementation of the PathTask enviroment.
 import time
 from copy import deepcopy
 from typing import Any, cast
-from gymnasium import spaces
+from gymnasium.spaces import Discrete, Dict, Box
 from ray.rllib.env.multi_agent_env import MultiAgentEnv
 from ray.rllib.utils.typing import MultiAgentDict, AgentID
 import numpy as np
@@ -193,6 +193,9 @@ class PathTaskEnv(MultiAgentEnv):
                                                                     goal_char=goal_char)
         infos["depot_position"] = self.depot_position.tolist()
 
+    def is_action_valid(self, *, action: h.Action, mask: h.FloatArr) -> bool:
+        return mask[action] == 1
+
     def reset(self, *,
               seed: int|None = None,
               options: dict[Any, Any]|None = None) -> tuple[MultiAgentDict, MultiAgentDict]:
@@ -337,7 +340,9 @@ class PathTaskEnv(MultiAgentEnv):
 
         # each agent executes its action
         for i in h.randomly(self.agent_idx, self.rng):
-            self.move_agent(a_idx=i, direction=h.Act_To_Dir[action_dict[self.agents[i]]])
+            if self.is_action_valid(action=action_dict[self.agents[i]],
+                                    mask=self.env_agents[i].mask):
+                self.move_agent(a_idx=i, direction=h.Act_To_Dir[action_dict[self.agents[i]]])
 
         # check for collisions
         # check for goal completion status
@@ -394,6 +399,10 @@ class PathTaskEnv(MultiAgentEnv):
                 if self.env_agents[i].goal_idx != h.AGENT_DEPOT:
                     self.tasks[new_goal_idx].contribute_to_plan(self.env_agents[i].traits)
 
+        # agent goals could have been removed by another agent, so set anew
+        for i in self.agent_idx:
+            self.set_goal_grid(self.env_agents[i].goal_pos, True)
+
         copied_global_obs: h.FloatArr = deepcopy(self.global_obs)
         observations: dict[AgentID, dict[str, dict[str, h.FloatArr]|h.FloatArr]] = {}
         for i in range(self.args.num_agents):
@@ -416,12 +425,12 @@ class PathTaskEnv(MultiAgentEnv):
             # we finished the episode by finishing all tasks, so reward agents
             for i in self.agent_idx:
                 rewards[self.agents[i]] = self.all_tasks_finished_rwd
-        terminations = {"__all__": env_termination}
+        terminateds = {"__all__": env_termination}
 
         env_truncation = False
         if self.timestep == self.args.episode_length:
             env_truncation = True
-        truncations = {"__all__": env_truncation}
+        truncateds = {"__all__": env_truncation}
 
         infos: dict[AgentID, Any] = {}
         if self.args.with_debug_infos:
@@ -431,7 +440,7 @@ class PathTaskEnv(MultiAgentEnv):
             self.render()
             time.sleep(self.args.delay_btw_frames)
 
-        return observations, rewards, terminations, truncations, infos # type: ignore
+        return observations, rewards, terminateds, truncateds, infos # type: ignore
 
     def render(self) -> None:
         """
@@ -478,25 +487,25 @@ class PathTaskEnv(MultiAgentEnv):
 
             print()
 
-    def get_observation_space(self, agent_id: AgentID = "agent_0") -> spaces.Dict:
+    def get_observation_space(self, agent_id: AgentID = "agent_0") -> Dict:
         grid_size = 2 * self.args.obs_radius + 1
 
-        return spaces.Dict({
-            "local_obs": spaces.Dict({
-                "grid_obs": spaces.Box(
+        return Dict({
+            "local_obs": Dict({
+                "grid_obs": Box(
                     low=-np.inf,
                     high=np.inf,
                     shape=(grid_size, grid_size, 4),
                     dtype=h.DTYPE_FLOAT
                 ),
-                "vec_obs": spaces.Box(
+                "vec_obs": Box(
                     low=-np.inf,
                     high=np.inf,
                     shape=(3,),
                     dtype=h.DTYPE_FLOAT
                 ),
             }),
-            "global_obs": spaces.Box(
+            "global_obs": Box(
                 low=-np.inf,
                 high=np.inf,
                 shape=(self.grid_dim + 2*self.args.obs_radius,
@@ -504,7 +513,7 @@ class PathTaskEnv(MultiAgentEnv):
                        4),
                 dtype=h.DTYPE_FLOAT
             ),
-            "action_mask": spaces.Box(
+            "action_mask": Box(
                 low=0,
                 high=1,
                 shape=(5,),
@@ -513,4 +522,4 @@ class PathTaskEnv(MultiAgentEnv):
         })
 
     def get_action_space(self, agent_id: AgentID = "agent_0"): # type: ignore
-        return spaces.Discrete(5) # type: ignore
+        return Discrete(5) # type: ignore
