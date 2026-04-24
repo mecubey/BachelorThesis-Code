@@ -3,6 +3,7 @@ Contains the implementation of the PathTask enviroment.
 """
 
 import time
+from copy import deepcopy
 from typing import Any, cast
 from gymnasium import spaces
 from ray.rllib.env.multi_agent_env import MultiAgentEnv
@@ -147,8 +148,8 @@ class PathTaskEnv(MultiAgentEnv):
         end_obs_radius: h.PositionT = self.agent_positions[a_idx]+self.args.obs_radius+1
 
         # get local observation of agent
-        grid_obs: h.FloatArr = self.global_obs[begin_obs_radius[0]:end_obs_radius[0],
-                                               begin_obs_radius[1]:end_obs_radius[1]].copy()
+        grid_obs: h.FloatArr = deepcopy(self.global_obs[begin_obs_radius[0]:end_obs_radius[0],
+                                                        begin_obs_radius[1]:end_obs_radius[1]])
 
         # zero out all goals of agents (only want neighbour goals)
         grid_obs[..., self.grid_offsets.goal] = 0
@@ -288,16 +289,20 @@ class PathTaskEnv(MultiAgentEnv):
         if self.args.with_debug_infos:
             self.set_infos(infos)
 
+        # since global_obs is the same for all agents, only copy once
+        copied_global_obs: h.FloatArr = deepcopy(self.global_obs)
+
         observations: dict[AgentID, dict[str, dict[str, h.FloatArr]|h.FloatArr]] = {}
         # don't need to randomly iterate because we are assigning obs
         for i in range(self.args.num_agents):
             self.env_agents[i].edit_mask(self.walkable, self.agent_positions[i])
             unit_vec, dist = self.get_vec_obs(i)
-            observations[self.agents[i]] = {"observation":
+            observations[self.agents[i]] = {"local_obs":
                                             self.get_agent_obs(a_idx=i,
                                                                unit_vec=unit_vec,
                                                                dist=dist),
-                                            "action_mask": self.env_agents[i].mask}
+                                            "global_obs": copied_global_obs,
+                                            "action_mask": deepcopy(self.env_agents[i].mask)}
 
         if self.args.render_mode == "human":
             self.render()
@@ -389,15 +394,17 @@ class PathTaskEnv(MultiAgentEnv):
                 if self.env_agents[i].goal_idx != h.AGENT_DEPOT:
                     self.tasks[new_goal_idx].contribute_to_plan(self.env_agents[i].traits)
 
+        copied_global_obs: h.FloatArr = deepcopy(self.global_obs)
         observations: dict[AgentID, dict[str, dict[str, h.FloatArr]|h.FloatArr]] = {}
         for i in range(self.args.num_agents):
             self.env_agents[i].edit_mask(self.walkable, self.agent_positions[i])
             unit_vec, dist = self.get_vec_obs(i)
-            observations[self.agents[i]] = {"observation":
+            observations[self.agents[i]] = {"local_obs":
                                              self.get_agent_obs(a_idx=i,
                                                                 unit_vec=unit_vec,
                                                                 dist=dist),
-                                            "action_mask": self.env_agents[i].mask}
+                                            "global_obs": copied_global_obs,
+                                            "action_mask": deepcopy(self.env_agents[i].mask)}
 
             # negative normalized distance to goal is added to reward
             rewards[self.agents[i]] += -(dist / self.max_goal_dist).astype(h.DTYPE_FLOAT)
@@ -475,7 +482,7 @@ class PathTaskEnv(MultiAgentEnv):
         grid_size = 2 * self.args.obs_radius + 1
 
         return spaces.Dict({
-            "observation": spaces.Dict({
+            "local_obs": spaces.Dict({
                 "grid_obs": spaces.Box(
                     low=-np.inf,
                     high=np.inf,
@@ -489,6 +496,14 @@ class PathTaskEnv(MultiAgentEnv):
                     dtype=h.DTYPE_FLOAT
                 ),
             }),
+            "global_obs": spaces.Box(
+                low=-np.inf,
+                high=np.inf,
+                shape=(self.grid_dim + 2*self.args.obs_radius,
+                       self.grid_dim + 2*self.args.obs_radius,
+                       4),
+                dtype=h.DTYPE_FLOAT
+            ),
             "action_mask": spaces.Box(
                 low=0,
                 high=1,

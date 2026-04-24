@@ -40,7 +40,7 @@ class EnvParams:
     trait_dim: int
     episode_length: int
     field_dim: int
-    render_mode: str
+    render_mode: str|None
     delay_btw_frames: float
     with_debug_infos: bool
 
