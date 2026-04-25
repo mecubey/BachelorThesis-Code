@@ -14,26 +14,14 @@ def contribution(*,
     Given an agent trait, task requirement and the task's remaining requirements, 
     calculates a contribution score for the agent.
     """
-    fin_contr_score: int = rem_requirements.sum()
-    scores: h.FloatArr = np.zeros(2, h.DTYPE_FLOAT)
+    score = 0
     for i in range(trait_dim):
-        if rem_requirements[i] == agent_trait[i] == 1:
-            fin_contr_score -= 1
-
+        if rem_requirements[i] == 1 and agent_trait[i] == 1:
             # if agent can contribute to something which needs its
             # contribution, we encourage contribution
-            scores[0] += 1
+            score += 1
 
-        # if agent contributes to something which does not need its
-        # contribution, we discourage contribution
-        if rem_requirements[i] == 0 and agent_trait[i] == 1:
-            scores[1] -= 1
-
-    if fin_contr_score == 0:
-        # if agent can finish this task by contributing,
-        # then we want the agent to contribute to this task
-        scores[0] = scores[1] = np.inf
-    return scores
+    return score
 
 def get_goal(*,
              trait_dim: int,
@@ -44,7 +32,7 @@ def get_goal(*,
     Given an agent trait and task attributes, assigns an unfinished task
     to the agent.
     """
-    costs: h.FloatArr = np.zeros((num_tasks, 2), h.DTYPE_FLOAT)
+    costs: h.FloatArr = np.zeros(num_tasks, h.DTYPE_FLOAT)
 
     for i in range(num_tasks):
         if tasks[i].will_get_finished:
@@ -56,9 +44,7 @@ def get_goal(*,
 
     # agent cannot contribute to any task,
     # so its goal will be the agent depot
-    if (costs[:, 0] == 0).all():
+    if (costs == 0).all():
         return h.AGENT_DEPOT
-
-    costs = np.sum(costs, axis=1)
 
     return np.argmax(costs).item()

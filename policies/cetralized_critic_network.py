@@ -24,6 +24,7 @@ class CentralizedCritic(nn.Module):
         )
 
     def forward(self, global_obs):
-        x = self.conv(x)
+        global_obs = global_obs.permute(0, 3, 1, 2)
+        x = self.conv(global_obs)
         value = self.value_head(x)
         return value

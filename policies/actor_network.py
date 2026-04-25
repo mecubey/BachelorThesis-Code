@@ -14,7 +14,7 @@ class Actor(nn.Module):
         )
 
         with torch.no_grad():
-            dummy = torch.zeros(1, c, h, w)
+            dummy = torch.zeros(1, c, w, h)
             grid_out_dim = self.grid_encoder(dummy).shape[1]
 
         self.vec_encoder = nn.Sequential(
@@ -29,6 +29,7 @@ class Actor(nn.Module):
         )
 
     def forward(self, grid_obs, vec_obs, masks):
+        grid_obs = grid_obs.permute(0, 3, 1, 2) # B, H, W, C -> B, C, H, W
         g = self.grid_encoder(grid_obs)
         v = self.vec_encoder(vec_obs)
 

@@ -11,21 +11,3 @@ class CentralizedCriticSharedActorMultiRLModule(MultiRLModule):
         fwd_out = {}
         fwd_out["shared_policy"] = m(batch["shared_policy"], **kwargs)
         return fwd_out
-    
-    @override(MultiRLModule)
-    def _forward_inference(
-        self, batch: Dict[str, Any], **kwargs
-    ) -> Union[Dict[str, Any], Dict[ModuleID, Dict[str, Any]]]:
-        return self._forward(batch, "_forward_inference", **kwargs)
-
-    @override(MultiRLModule)
-    def _forward_exploration(
-        self, batch: Dict[str, Any], **kwargs
-    ) -> Union[Dict[str, Any], Dict[ModuleID, Dict[str, Any]]]:
-        return self._forward(batch, "_forward_exploration", **kwargs)
-
-    @override(MultiRLModule)
-    def _forward_train(
-        self, batch: Dict[str, Any], **kwargs
-    ) -> Union[Dict[str, Any], Dict[ModuleID, Dict[str, Any]]]:
-        return self._forward(batch, "_forward_train", **kwargs)

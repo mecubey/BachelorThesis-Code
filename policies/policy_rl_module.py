@@ -24,9 +24,9 @@ class CentralizedCriticSharedActor(TorchRLModule, ValueFunctionAPI):
         batch: Dict[str, Any],
         embeddings: Optional[Any] = None,
     ) -> TensorType:
-        return self.vf(batch["global_obs"])
+        return self.vf(batch[Columns.OBS]["global_obs"])
 
     def _forward(self, batch, **kwargs):
-        return {Columns.ACTION_DIST_INPUTS: self.encoder(batch["local_obs"]["grid_obs"],
-                                                       batch["local_obs"]["vec_obs"],
-                                                       batch["local_obs"]["action_mask"])}
+        return {Columns.ACTION_DIST_INPUTS: self.encoder(batch[Columns.OBS]["local_obs"]["grid_obs"],
+                                                         batch[Columns.OBS]["local_obs"]["vec_obs"],
+                                                         batch[Columns.OBS]["action_mask"])}

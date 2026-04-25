@@ -134,7 +134,7 @@ class PathTaskEnv(MultiAgentEnv):
         Return vector observations (unit vector to goal and euclidean distance).
         """
         goal_vec: h.FloatArr = self.env_agents[a_idx].goal_pos - self.agent_positions[a_idx]
-        goal_distance: h.DTYPE_FLOAT = (np.linalg.norm(goal_vec)+h.EPSILON).astype(h.DTYPE_FLOAT)
+        goal_distance: h.DTYPE_FLOAT = np.linalg.norm(goal_vec)+h.EPSILON
         return goal_vec, goal_distance
 
     def get_agent_obs(self, *,
@@ -172,7 +172,7 @@ class PathTaskEnv(MultiAgentEnv):
 
         return {"grid_obs": grid_obs,
                 "vec_obs": np.concatenate([unit_vec / dist, 
-                                           np.array([dist])], axis=0)}
+                                           np.array([dist])], axis=0, dtype=h.DTYPE_FLOAT)}
 
     def set_infos(self, infos: dict[AgentID, Any]):
         """
@@ -391,7 +391,7 @@ class PathTaskEnv(MultiAgentEnv):
                 self.env_agents[i].set_goal(new_goal_idx=new_goal_idx,
                                             tasks=self.tasks,
                                             depot_pos=self.depot_position)
-
+                
                 # set new goal in grid
                 self.set_goal_grid(self.env_agents[i].goal_pos, True)
 
