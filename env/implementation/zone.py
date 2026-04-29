@@ -22,12 +22,13 @@ class Zone():
 
     def spawn(self, *, start_pos: h.PositionT) -> None:
         """
-        Sets the first tile of this zone.\n
+        Spreads to a given position anywher in the grid.\n
         occupied_tiles should be empty before calling this method.\n
         Note that this does not modify the actual grid.
         """
         assert self.empty(), \
             f"occupied_tiles needs to be empty before spawning, got {self.occupied_tiles}"
+        self.spread_progress += 1
         self.occupied_tiles.append(start_pos)
 
     def spread(self, *,
@@ -49,8 +50,7 @@ class Zone():
 
                 # cannot spread to tiles that already contain zone,
                 # cannot spread if prob does not hit,
-                # cannot spread if on wall tile,
-                # cannot spread if new_pos is outside grid
+                # cannot spread if on wall tile
                 if on_zone(new_pos) or \
                    rng.random() > self.dir_spread_probs[i] or \
                    not no_wall(new_pos):
@@ -64,10 +64,10 @@ class Zone():
 
     def empty(self) -> bool:
         """
-        Returns true if there are no tiles which the zone
-        has spread to. False otherwise.
+        Returns true if the zone has not spread once yet.\n
+        False otherwise.
         """
-        return not self.occupied_tiles
+        return self.spread_progress == 0
 
     def done(self) -> bool:
         """

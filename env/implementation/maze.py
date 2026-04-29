@@ -33,7 +33,7 @@ def gen_maze_graph(*,
         # make sure origin does not point out of maze
         mask: list[bool] = [origin_pos[0] != 0, origin_pos[1] != dim-1,
                             origin_pos[0] != dim-1, origin_pos[1] != 0, False]
-        new_dir: h.Action = rng.choice(h.Acts_Arr[mask])
+        new_dir: h.Action = rng.choice(h.ACTS_ARR[mask])
         maze[*origin_pos] = new_dir
 
         # don't want origin in output, so break at second to last iteration
@@ -41,7 +41,7 @@ def gen_maze_graph(*,
             break
 
         # step 2: that neigbouring node becomes the new origin
-        origin_pos += h.Act_To_Dir[new_dir]
+        origin_pos += h.ACT_TO_DIR[new_dir]
 
         # step 3: remove the new origin node's pointer
         maze[*origin_pos] = h.ORIGIN
@@ -92,19 +92,19 @@ def gen_maze(*,
             cell = maze_graph[*maze_graph_pos]
 
             # open cell centers
-            maze_buffer[*(maze_pos+obs_radius), offsets.wall] = 1
+            maze_buffer[*(maze_pos+obs_radius), offsets.no_wall] = 1
             free_tiles.append(maze_pos+obs_radius)
 
             if cell == h.ALL_OUTGOING:
-                allowed: h.IntArr = h.Acts_Arr[:-1]
+                allowed: h.IntArr = h.ACTS_ARR[:-1]
             else:
                 allowed: h.IntArr = np.array([cell], dtype=h.DTYPE_INT)
 
             for d in allowed:
-                new_pos: h.PositionT = maze_pos+h.Act_To_Dir_Arr[d]
+                new_pos: h.PositionT = maze_pos+h.ACT_TO_DIR_ARR[d]
                 if 0 <= new_pos[0] < exp_dim and 0 <= new_pos[1] < exp_dim:
                     # remove wall between cells
-                    maze_buffer[*(new_pos+obs_radius), offsets.wall] = 1
+                    maze_buffer[*(new_pos+obs_radius), offsets.no_wall] = 1
                     free_tiles.append(new_pos+obs_radius)
 
     return np.unique(np.array(free_tiles, dtype=h.DTYPE_INT), axis=0) # remove duplicates

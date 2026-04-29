@@ -24,6 +24,8 @@ BoolArr = np.typing.NDArray[DTYPE_BOOL]
 
 PositionT = np.ndarray[tuple[2], np.dtype[DTYPE_INT]]
 
+MultiObsT = dict[str, dict[str, dict[str, FloatArr]|FloatArr]]
+
 @dataclass
 class EnvParams:
     """
@@ -34,8 +36,9 @@ class EnvParams:
     obs_radius: int
     agent_capability: float
     maze_intensity: float
+    spawn_prob: float
+    spread_prob: float
     max_num_spread: int
-    step_spread_prob: float
     dir_spread_probs: list[float]
     trait_dim: int
     episode_length: int
@@ -49,23 +52,20 @@ class GridOffsets:
     """
     Holds offsets used to assign values to grid cells in observations.
     """
-    wall: int
+    no_wall: int
     zone: int
     agent: int
-    goal: int
+    neighbour_goal: int
+    own_goal: int
 
 # constants
 EPSILON = 1e-16
-
-FIN_TASK_WITH_CONTR = 100
 
 ACTION_LEN = 5
 
 ORIGIN = -1
 
 ALL_OUTGOING = 5
-
-AGENT_DEPOT = -1
 
 class Action(IntEnum):
     """
@@ -77,19 +77,19 @@ class Action(IntEnum):
     MOVE_LEFT = 3
     DO_NOTHING = 4
 
-Act_To_Dir: dict[Action, PositionT] = {Action.MOVE_UP: np.array([-1, 0]),
+ACT_TO_DIR: dict[Action, PositionT] = {Action.MOVE_UP: np.array([-1, 0]),
                                        Action.MOVE_RIGHT: np.array([0, 1]),
                                        Action.MOVE_DOWN: np.array([1, 0]),
                                        Action.MOVE_LEFT: np.array([0, -1]),
                                        Action.DO_NOTHING: np.array([0, 0])}
 
-Act_To_Dir_Arr: IntArr  = np.array([[-1, 0],
+ACT_TO_DIR_ARR: IntArr  = np.array([[-1, 0],
                                     [0, 1],
                                     [1, 0],
                                     [0, -1],
                                     [0, 0]], dtype=DTYPE_INT)
 
-Acts_Arr: IntArr = np.array(Action, dtype=DTYPE_INT)
+ACTS_ARR: IntArr = np.array(Action, dtype=DTYPE_INT)
 
 ## RENDERING VARS AND METHODS
 def rand_color(rng: np.random.Generator):
@@ -100,9 +100,7 @@ def rand_color(rng: np.random.Generator):
     return f"\033[38;2;{r};{g};{b}m"
 
 AGENT_CHAR: str = "A" + Style.RESET_ALL
-COAL_CHAR: str = "L" + Style.RESET_ALL
-TASK_CHAR: str = "T" + Style.RESET_ALL
-DEPOT_CHAR: str = Fore.YELLOW + "D" + Style.RESET_ALL
+GOAL_CHAR: str = "G" + Style.RESET_ALL
 WALL_CHAR: str = Fore.WHITE + "\u2588" + Style.RESET_ALL
 ZONE_COL: str = Back.LIGHTRED_EX
 ## RENDERING VARS AND METHODS
@@ -112,7 +110,7 @@ def reverse_dir(act: Action) -> PositionT:
     """
     Returns opposite direction coordinates.
     """
-    return Act_To_Dir[act]*-1
+    return ACT_TO_DIR[act]*-1
 
 def randomly(l: list[Any], rng: np.random.Generator) -> list[Any]:
     """
