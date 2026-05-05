@@ -2,8 +2,7 @@
 Contains agent related classes, attributes, methods.
 """
 
-from typing import Callable, Any
-import numpy as np
+from typing import Any
 from . import header as h
 
 class EnvAgent():
@@ -34,11 +33,3 @@ class EnvAgent():
         False otherwise.
         """
         return (self.goal_pos == pos).all()
-
-    def get_mask(self, walkable: Callable[[h.PositionT], bool], pos: h.PositionT) -> h.FloatArr:
-        """
-        Set valid actions of this agent.
-        """
-        mask: list[bool] = [walkable(pos+h.ACT_TO_DIR_ARR[i]) for i in range(h.ACTION_LEN-1)]
-        mask.append(True) # agent can always stay at their current position
-        return np.array(mask, h.DTYPE_FLOAT)

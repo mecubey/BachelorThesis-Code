@@ -28,32 +28,32 @@ class Zone():
         """
         assert self.empty(), \
             f"occupied_tiles needs to be empty before spawning, got {self.occupied_tiles}"
-        self.spread_progress += 1
         self.occupied_tiles.append(start_pos)
 
     def spread(self, *,
                rng: np.random.Generator,
                on_zone: Callable[[h.PositionT], bool],
-               no_wall: Callable[[h.PositionT], bool]) -> list[h.PositionT]:
+               no_wall: Callable[[h.PositionT], bool],
+               inside_grid: Callable[[h.PositionT], bool]) -> list[h.PositionT]:
         """
         Randomly spread a zone tile. A zone tile can only spread to its
         neighbouring tiles. Note that this does not modify the actual grid.
 
         Returns positions of new tiles that were spread to.
         """
-        self.spread_progress += 1
-
         newly_occupied_tiles: list[h.PositionT] = []
         for pos in self.occupied_tiles:
-            for i in range(h.ACTION_LEN-1): # last action is "DO_NOTHING"
-                new_pos: h.PositionT = pos+h.Act_To_Dir_Arr[i]
+            for act in  h.ACTS_ARR[:-1]: # last action is "DO_NOTHING"
+                new_pos: h.PositionT = pos+h.ACT_TO_DIR[act]
 
                 # cannot spread to tiles that already contain zone,
                 # cannot spread if prob does not hit,
-                # cannot spread if on wall tile
+                # cannot spread if on wall tile,
+                # cannot spread if outside grid
                 if on_zone(new_pos) or \
-                   rng.random() > self.dir_spread_probs[i] or \
-                   not no_wall(new_pos):
+                   rng.random() > self.dir_spread_probs[act] or \
+                   not no_wall(new_pos) or \
+                   not inside_grid(new_pos):
                     continue
 
                 newly_occupied_tiles.append(new_pos)
@@ -68,6 +68,12 @@ class Zone():
         False otherwise.
         """
         return self.spread_progress == 0
+
+    def progress(self) -> None:
+        """
+        Progress spread of hazard.
+        """
+        self.spread_progress += 1
 
     def done(self) -> bool:
         """

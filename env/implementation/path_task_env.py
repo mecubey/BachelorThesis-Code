@@ -3,8 +3,7 @@ Contains the implementation of the PathTask enviroment.
 """
 
 import time
-from typing import Any, cast, Optional
-from gymnasium.spaces import Dict, Box, Space, Discrete
+from typing import Any, cast
 import numpy as np
 from .agent import EnvAgent
 from .zone import Zone
@@ -21,34 +20,19 @@ class PathTaskMultiAgentEnv:
         self.timestep: int = 0
         self.rng: np.random.Generator = np.random.default_rng()
         self.config = config
-        self.observation_offset: h.PositionT = np.array([args.obs_radius,
-                                                         args.obs_radius],
-                                                         dtype=h.DTYPE_INT)
-        self.grid_offsets = h.GridOffsets(no_wall=0,
-                                          zone=1,
-                                          agent=2,
-                                          neighbour_goal=3,
-                                          own_goal=4)
         self.grid_dim: int = 2*args.field_dim-1
-        self.max_goal_dist: int = 2*(self.grid_dim-1)
         self.free_tiles: h.IntArr
 
         # for a single cell:
         # no_wall (1),
         # zone (1),
         # agent (1)
-        self.global_obs: h.FloatArr = np.zeros((self.grid_dim + 2*args.obs_radius,
-                                                self.grid_dim + 2*args.obs_radius,
-                                                3),
-                                               dtype=h.DTYPE_FLOAT)
-        # in agents' own observation, these are also added:
-        # is_neighbour_goals (1)
-        # is_own_goal (1)
+        self.global_obs: h.BoolArr = np.zeros((self.grid_dim,
+                                               self.grid_dim,
+                                               3),
+                                               dtype=h.DTYPE_BOOL)
 
         # REWARD VARS
-        self.all_goals_reached_rwd: h.DTYPE_FLOAT = h.DTYPE_FLOAT(20)
-        self.step_penalty: h.DTYPE_FLOAT = h.DTYPE_FLOAT(-0.3)
-        self.collision_penalty: h.DTYPE_FLOAT = h.DTYPE_FLOAT(-2)
         self.zone_penalty: h.DTYPE_FLOAT = h.DTYPE_FLOAT(-1)
 
         # AGENTS
@@ -65,33 +49,40 @@ class PathTaskMultiAgentEnv:
         Returns true if there is no wall on the given position.\n
         False otherwise.
         """
-        return self.global_obs[*pos, self.grid_offsets.no_wall]
+        return self.global_obs[*pos, h.GridOffsets.NO_WALL]
 
     def on_zone(self, pos: h.PositionT) -> bool:
         """
         Returns true if there is a zone on the given position.\n
         False otherwise.
         """
-        return self.global_obs[*pos, self.grid_offsets.zone]
+        return self.global_obs[*pos, h.GridOffsets.ZONE]
 
     def on_agent(self, pos: h.PositionT) -> bool:
         """
         Returns true if there is an agent on the given position.\n
         False otherwise.
         """
-        return self.global_obs[*pos, self.grid_offsets.agent]
+        return self.global_obs[*pos, h.GridOffsets.AGENT]
 
     def set_zone_grid(self, pos: h.PositionT, val: bool) -> None:
         """
         Sets/Removes zone on the specified position inside the grid.
         """
-        self.global_obs[*pos, self.grid_offsets.zone] = val
+        self.global_obs[*pos, h.GridOffsets.ZONE] = val
 
     def set_agent_grid(self, pos: h.PositionT, val: bool) -> None:
         """
         Sets/Removes agent on the specified position inside the grid.
         """
-        self.global_obs[*pos, self.grid_offsets.agent] = val
+        self.global_obs[*pos, h.GridOffsets.AGENT] = val
+
+    def inside_grid(self, pos: h.PositionT) -> bool:
+        """
+        Returns true if position is inside the grid.\n
+        False otherwise.
+        """
+        return 0 <= pos[0] < self.grid_dim and 0 <= pos[1] < self.grid_dim
 
     def walkable(self, pos: h.PositionT) -> bool:
         """
@@ -99,7 +90,7 @@ class PathTaskMultiAgentEnv:
         False otherwise.
         """
         # tile cannot contain wall or another agent
-        return self.on_no_wall(pos) and not self.on_agent(pos)
+        return self.inside_grid(pos) and self.on_no_wall(pos) and not self.on_agent(pos)
 
     def move_agent(self, *, a_idx: int, direction: h.PositionT) -> None:
         """
@@ -108,67 +99,6 @@ class PathTaskMultiAgentEnv:
         self.set_agent_grid(self.agent_positions[a_idx], False)
         self.agent_positions[a_idx] += direction
         self.set_agent_grid(self.agent_positions[a_idx], True)
-
-    def get_vec_obs(self, a_idx: int) -> tuple[h.FloatArr, h.DTYPE_FLOAT]:
-        """
-        Return vector observations (unit vector to goal and euclidean distance).
-        """
-        goal_vec: h.FloatArr = (self.agents[a_idx].goal_pos -
-                                self.agent_positions[a_idx]).astype(h.DTYPE_FLOAT)
-        goal_distance: h.DTYPE_FLOAT = np.linalg.norm(goal_vec)+h.EPSILON
-        return goal_vec, goal_distance
-
-    def get_agent_obs(self, *,
-                      a_idx: int,
-                      unit_vec: h.FloatArr,
-                      dist: h.DTYPE_FLOAT) -> dict[str, h.FloatArr]:
-        """
-        Assuming the enviroment is in state s, get observation of agent a_idx of state s.
-        """
-        begin_obs_radius: h.PositionT = self.agent_positions[a_idx]-self.args.obs_radius
-        end_obs_radius: h.PositionT = self.agent_positions[a_idx]+self.args.obs_radius+1
-
-        # get local observation of agent
-        grid_obs: h.FloatArr = self.global_obs[begin_obs_radius[0]:end_obs_radius[0],
-                                               begin_obs_radius[1]:end_obs_radius[1]]
-
-        # each cell should get two other zeros for neighbour_goals & own_goals
-        grid_obs = np.concatenate([grid_obs,
-                                   np.zeros((grid_obs.shape[0],
-                                             grid_obs.shape[1],
-                                             2))],
-                                   axis=2).astype(h.DTYPE_FLOAT)
-
-        # get indices of agents that are inside local observation
-        # use chebyshev distance
-        neighbours: h.IntArr = np.where(np.max(np.abs(self.agent_positions -
-                                                      self.agent_positions[a_idx]), axis=1)
-                               <= self.args.obs_radius)[0]
-
-        for n in neighbours:
-            n = cast(h.DTYPE_INT, n)
-
-            if a_idx == n:
-                # put own goal into obs if inside obs
-                dist_to_own_goal: h.DTYPE_FLOAT = np.max(np.abs(self.agents[a_idx].goal_pos -
-                                                         self.agent_positions[a_idx]))
-
-                if dist_to_own_goal <= self.args.obs_radius:
-                    grid_obs[*(self.agents[a_idx].goal_pos-
-                               (self.agent_positions[a_idx]-
-                                self.observation_offset)), self.grid_offsets.own_goal] = 1
-                continue
-
-            # clip neighbour's goals to edge of local observation
-            clipped_goal_pos = np.clip(self.agents[n].goal_pos,
-                                       self.agent_positions[a_idx]-self.args.obs_radius,
-                                       self.agent_positions[a_idx]+self.args.obs_radius)
-            clipped_goal_pos -= (self.agent_positions[a_idx]-self.observation_offset)
-            grid_obs[*clipped_goal_pos, self.grid_offsets.neighbour_goal] = 1
-
-        return {"grid_obs": grid_obs,
-                "vec_obs": np.concatenate([unit_vec / dist, 
-                                           np.array([dist], dtype=h.DTYPE_FLOAT)], axis=0)}
 
     def set_infos(self, infos: dict[str, Any]):
         """
@@ -186,11 +116,9 @@ class PathTaskMultiAgentEnv:
         return self.walkable(self.agent_positions[a_idx]+h.ACT_TO_DIR[action])
 
     def reset(self, *,
-              seed: int|None = None,
-              options: Optional[dict[Any, Any]] = None) -> tuple[h.MultiObsT,
-                                                                 dict[str, Any]]:
+              seed: int|None = None) -> dict[str, Any]:
         """
-        Resets the enviroment.
+        Resets the enviroment's attributes. Returns infos.
         """
         if seed is not None:
             self.rng = np.random.default_rng(seed)
@@ -205,11 +133,9 @@ class PathTaskMultiAgentEnv:
 
         # set maze in global_obs and get tiles with no walls
         self.free_tiles = gen_maze(maze_buffer=self.global_obs,
-                                   obs_radius=self.args.obs_radius,
                                    dim=self.args.field_dim,
                                    maze_intensity=self.args.maze_intensity,
                                    rng=self.rng,
-                                   offsets=self.grid_offsets,
                                    exp_dim=self.grid_dim)
 
         num_free_tiles: int = len(self.free_tiles)
@@ -237,48 +163,39 @@ class PathTaskMultiAgentEnv:
         if self.args.with_debug_infos:
             self.set_infos(infos)
 
-        observations: h.MultiObsT = {}
-        # don't need to randomly iterate because we are assigning obs
-        for agent in self.agents:
-            unit_vec, dist = self.get_vec_obs(agent.agent_id)
-            observations[agent.agent_name] = {"local_obs":
-                                              self.get_agent_obs(a_idx=agent.agent_id,
-                                                                 unit_vec=unit_vec,
-                                                                 dist=dist),
-                                              "action_mask": 
-                                              agent.get_mask(self.walkable,
-                                                             self.agent_positions[agent.agent_id])}
-
         if self.args.render_mode == "human":
             self.render()
             time.sleep(self.args.delay_btw_frames)
 
-        return observations, infos
+        return infos
 
-    def step(self, action_dict: dict[str, h.Action]) -> tuple[h.MultiObsT,
-                                                              dict[str, h.DTYPE_FLOAT],
-                                                              bool,
-                                                              bool,
-                                                              dict[str, Any]]:
+    def step(self, action_dict: dict[str, h.Action]) -> tuple[bool, bool, dict[str, Any]]:
         """
         Step through the enviroment with a given action dictionary.\n
-        Returns observations, rewards, terminations, trunactions, infos dictionaries.
+        The action dictionary has the form
+            {"agent_0": action_of_0, "agent_1": action_of_1, ...}
+        Returns whether the enviroment has terminated or truncates and infos.
         """
         num_agents_on_goal: int = 0
 
-        rewards: dict[str, h.DTYPE_FLOAT] = {a.agent_name: self.step_penalty for a in self.agents}
+        # we only progress the hazard once we know it has spread to at least one tile
+        if not self.zone.empty():
+            self.zone.progress()
 
-        # randomly spawn zone if zone is zone is empty
+        # randomly spawn zone if zone is empty
+        spawned: bool = False
         if self.zone.empty() and self.rng.random() <= self.args.spawn_prob:
+            spawned = True
             zone_start_pos: h.PositionT = self.rng.choice(self.free_tiles)
             self.zone.spawn(start_pos=zone_start_pos)
             self.set_zone_grid(zone_start_pos, True) # set starting zone inside grid
 
-        # randomly spread randomly in cardinal directions
-        if self.rng.random() <= self.args.spread_prob:
+        # randomly spread randomly in cardinal directions if now spawned in this timestep
+        if self.rng.random() <= self.args.spread_prob and not spawned:
             new_spread_tiles: list[h.PositionT] = self.zone.spread(rng=self.rng,
                                                                    on_zone=self.on_zone,
-                                                                   no_wall=self.on_no_wall)
+                                                                   no_wall=self.on_no_wall,
+                                                                   inside_grid=self.inside_grid)
             for tile_pos in new_spread_tiles: # set zone inside grid
                 self.set_zone_grid(tile_pos, True)
 
@@ -287,10 +204,7 @@ class PathTaskMultiAgentEnv:
                 self.set_zone_grid(tile_pos, False)
             self.zone.reset()
 
-        # each agent executes its action if it's valid
-        # random sequential action execution
-        for i in h.randomly(self.agent_idx, self.rng):
-            i = cast(int, i)
+        for i in self.agent_idx:
             if self.is_action_valid(action=action_dict[self.agents[i].agent_name],
                                     a_idx=i):
                 self.move_agent(a_idx=i,
@@ -306,39 +220,21 @@ class PathTaskMultiAgentEnv:
             if len(collidees) > 1:
                 for c in collidees: # we move all the colliding agents back
                     c = cast(int, c)
-                    # punish agent for colliding
-                    rewards[self.agents[c].agent_name] = self.collision_penalty
 
                     # reverse last action
                     self.move_agent(a_idx=c,
                                     direction=h.reverse_dir(action_dict[self.agents[c].agent_name]))
 
-            # agents should not step into zones
-            if self.on_zone(self.agent_positions[i]):
-                rewards[self.agents[i].agent_name] += self.zone_penalty
-
-        observations: h.MultiObsT = {}
-        for agent in self.agents:
-            num_agents_on_goal += agent.on_goal(self.agent_positions[agent.agent_id])
-            unit_vec, dist = self.get_vec_obs(agent.agent_id)
-            observations[agent.agent_name] = {"local_obs":
-                                              self.get_agent_obs(a_idx=agent.agent_id,
-                                                                 unit_vec=unit_vec,
-                                                                 dist=dist),
-                                              "action_mask": agent.get_mask(self.walkable,
-                                                             self.agent_positions[agent.agent_id])}
+            if self.agents[i].on_goal(self.agent_positions[i]):
+                num_agents_on_goal += 1
 
         truncated = False
         if self.timestep == self.args.episode_length:
             truncated = True
 
         terminated = False
-        if num_agents_on_goal == self.args.num_tasks:
+        if num_agents_on_goal == self.args.num_agents:
             terminated = True
-
-            # we finished the episode by finishing all tasks, so reward agents
-            for i in self.agent_idx:
-                rewards[self.agents[i].agent_name] = self.all_goals_reached_rwd
 
         infos: dict[str, Any] = {}
         if self.args.with_debug_infos:
@@ -348,7 +244,9 @@ class PathTaskMultiAgentEnv:
             self.render()
             time.sleep(self.args.delay_btw_frames)
 
-        return observations, rewards, terminated, truncated, infos
+        self.timestep += 1
+
+        return terminated, truncated, infos
 
     def render(self) -> None:
         """
@@ -388,39 +286,3 @@ class PathTaskMultiAgentEnv:
                 print(tmp_zone_char + " " + h.Style.RESET_ALL, end="")
 
             print()
-
-    def get_observation_space(self) -> Dict:
-        """
-        Get the observation space of this enviroment.
-        """
-
-        grid_size = 2 * self.args.obs_radius + 1
-
-        return Dict({
-            "local_obs": Dict({
-                "grid_obs": Box(
-                    low=-np.inf,
-                    high=np.inf,
-                    shape=(grid_size, grid_size, 4),
-                    dtype=h.DTYPE_FLOAT
-                ),
-                "vec_obs": Box(
-                    low=-np.inf,
-                    high=np.inf,
-                    shape=(3,),
-                    dtype=h.DTYPE_FLOAT
-                ),
-            }),
-            "action_mask": Box(
-                low=0,
-                high=1,
-                shape=(5,),
-                dtype=h.DTYPE_FLOAT
-            ),
-        })
-
-    def get_action_space(self) -> Space[np.integer]:
-        """
-        Get the action space of this enviroment.
-        """
-        return Discrete(5)

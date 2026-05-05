@@ -24,48 +24,37 @@ BoolArr = np.typing.NDArray[DTYPE_BOOL]
 
 PositionT = np.ndarray[tuple[2], np.dtype[DTYPE_INT]]
 
-MultiObsT = dict[str, dict[str, dict[str, FloatArr]|FloatArr]]
-
 @dataclass
 class EnvParams:
     """
     Holds necessary parameters for the PathTaskEnv.
     """
     num_agents: int
-    num_tasks: int
-    obs_radius: int
-    agent_capability: float
     maze_intensity: float
     spawn_prob: float
     spread_prob: float
     max_num_spread: int
     dir_spread_probs: list[float]
-    trait_dim: int
     episode_length: int
     field_dim: int
     render_mode: str|None
     delay_btw_frames: float
     with_debug_infos: bool
 
-@dataclass
-class GridOffsets:
-    """
-    Holds offsets used to assign values to grid cells in observations.
-    """
-    no_wall: int
-    zone: int
-    agent: int
-    neighbour_goal: int
-    own_goal: int
-
 # constants
 EPSILON = 1e-16
-
-ACTION_LEN = 5
 
 ORIGIN = -1
 
 ALL_OUTGOING = 5
+
+class GridOffsets(IntEnum):
+    """
+    Holds offsets used to assign values to grid cells in observations.
+    """
+    NO_WALL = 0
+    ZONE = 1
+    AGENT = 2
 
 class Action(IntEnum):
     """
@@ -77,19 +66,34 @@ class Action(IntEnum):
     MOVE_LEFT = 3
     DO_NOTHING = 4
 
+ACTS_ARR = np.array(list(Action), dtype=Action)
+
 ACT_TO_DIR: dict[Action, PositionT] = {Action.MOVE_UP: np.array([-1, 0]),
                                        Action.MOVE_RIGHT: np.array([0, 1]),
                                        Action.MOVE_DOWN: np.array([1, 0]),
                                        Action.MOVE_LEFT: np.array([0, -1]),
                                        Action.DO_NOTHING: np.array([0, 0])}
 
-ACT_TO_DIR_ARR: IntArr  = np.array([[-1, 0],
-                                    [0, 1],
-                                    [1, 0],
-                                    [0, -1],
-                                    [0, 0]], dtype=DTYPE_INT)
+def dir_to_act(direction: PositionT) -> Action:
+    """
+    Takes a direction and returns corresponding positions.
+    """
+    if direction[0] == -1 and direction[1] == 0:
+        return Action.MOVE_UP
 
-ACTS_ARR: IntArr = np.array(Action, dtype=DTYPE_INT)
+    if direction[0] == 0 and direction[1] == 1:
+        return Action.MOVE_RIGHT
+
+    if direction[0] == 1 and direction[1] == 0:
+        return Action.MOVE_DOWN
+
+    if direction[0] == 0 and direction[1] == -1:
+        return Action.MOVE_LEFT
+
+    if direction[0] == 0 and direction[1] == 0:
+        return Action.MOVE_LEFT
+
+    raise ValueError(f"{direction} doesn't match any actions!")
 
 ## RENDERING VARS AND METHODS
 def rand_color(rng: np.random.Generator):
