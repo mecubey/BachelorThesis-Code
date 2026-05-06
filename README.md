@@ -1,11 +1,9 @@
-Code for my MA RL bachelor thesis.
-
-I plan on creating a benchmarking MA RL enviroment with different features which can be configured to increase or decrease the difficulty.
+Code for my bachelor thesis titled "Multi-Agent Pathfinding in Enviroments with Dynamically Spreading Hazards".
 
 For an explanation of the enviroment, see
 
 ```
-docs/path_task/explanation.md
+docs/path_task_env/explanation.md
 ```
 
 For the implementation, see
@@ -14,7 +12,7 @@ For the implementation, see
 env/implementation/path_task_env.py
 ```
 
-To use that enviroment, import
+To use the enviroment, configure and import
 ```
 env/path_task_env_v0.py
 ```
