@@ -1,11 +1,10 @@
 """
-Provides specific types.
+Provides specific types and constants.
 """
 
 from dataclasses import dataclass
 from enum import IntEnum
-from typing import Any, cast
-from colorama import Fore, Back, Style
+from typing import Any
 import numpy as np
 
 # dtypes
@@ -24,6 +23,10 @@ BoolArr = np.typing.NDArray[DTYPE_BOOL]
 
 PositionT = np.ndarray[tuple[2], np.dtype[DTYPE_INT]]
 
+PositionTupleT = tuple[int, int]
+
+IntervalT = tuple[int, int]
+
 @dataclass
 class EnvParams:
     """
@@ -35,15 +38,12 @@ class EnvParams:
     spread_prob: float
     max_num_spread: int
     dir_spread_probs: list[float]
-    episode_length: int
+    max_timestep: int
     field_dim: int
     render_mode: str|None
     delay_btw_frames: float
-    with_debug_infos: bool
 
 # constants
-EPSILON = 1e-16
-
 ORIGIN = -1
 
 ALL_OUTGOING = 5
@@ -66,13 +66,15 @@ class Action(IntEnum):
     MOVE_LEFT = 3
     DO_NOTHING = 4
 
-ACTS_ARR = np.array(list(Action), dtype=Action)
-
 ACT_TO_DIR: dict[Action, PositionT] = {Action.MOVE_UP: np.array([-1, 0]),
                                        Action.MOVE_RIGHT: np.array([0, 1]),
                                        Action.MOVE_DOWN: np.array([1, 0]),
                                        Action.MOVE_LEFT: np.array([0, -1]),
                                        Action.DO_NOTHING: np.array([0, 0])}
+
+DIR_ARR = np.array(list(ACT_TO_DIR.values()), dtype=DTYPE_INT)
+
+ACTS_ARR = np.array(list(ACT_TO_DIR.keys()), dtype=Action)
 
 def dir_to_act(direction: PositionT) -> Action:
     """
@@ -95,20 +97,6 @@ def dir_to_act(direction: PositionT) -> Action:
 
     raise ValueError(f"{direction} doesn't match any actions!")
 
-## RENDERING VARS AND METHODS
-def rand_color(rng: np.random.Generator):
-    """
-    Generate a random foreground color.
-    """
-    r, g, b = rng.integers(0, 256, size=3)
-    return f"\033[38;2;{r};{g};{b}m"
-
-AGENT_CHAR: str = "A" + Style.RESET_ALL
-GOAL_CHAR: str = "G" + Style.RESET_ALL
-WALL_CHAR: str = Fore.WHITE + "\u2588" + Style.RESET_ALL
-ZONE_COL: str = Back.LIGHTRED_EX
-## RENDERING VARS AND METHODS
-
 # methods
 def reverse_dir(act: Action) -> PositionT:
     """
@@ -122,18 +110,3 @@ def randomly(l: list[Any], rng: np.random.Generator) -> list[Any]:
     """
     rng.shuffle(l)
     return l
-
-def print_infos(d: dict[Any, Any], indent: int = 0):
-    """
-    Method used to print any dictionary (key:value pairs are on separate lines).\n
-    Specifically used to print infos of env.
-    """
-    pad = " " * indent
-    for k, v in d.items():
-        if isinstance(v, dict):
-            print(f"{pad}{k}:")
-            v = cast(dict[Any, Any], v)
-            print_infos(v, indent + 2)
-            print()
-        else:
-            print(f"{pad}{k}: {v}")

@@ -2,24 +2,21 @@
 Contains the actual enviroment creation method with specified parameters.
 """
 
-from pprint import pprint
-import numpy as np
 from implementation.planner.prioritized_planner import PrioritizedPlanner
 from implementation import header as h
 from implementation.path_task_env import PathTaskMultiAgentEnv
 
 params = h.EnvParams(
-    num_agents=30,
-    maze_intensity=0.3,
-    spawn_prob=0,
-    spread_prob=0,
+    num_agents=8,
+    maze_intensity=0.5,
+    spawn_prob=1,
+    spread_prob=1,
     max_num_spread=5,
     dir_spread_probs=[0.6, 0.7, 0.55, 0.8],
-    episode_length=150,
-    field_dim=30,
+    max_timestep=150,
+    field_dim=8,
     render_mode="human",
-    delay_btw_frames=0,
-    with_debug_infos=True
+    delay_btw_frames=0
 )
 
 def raw_env(args: h.EnvParams):
@@ -33,35 +30,38 @@ def main():
     """
     Method to test enviroment.
     """
+    env = raw_env(params)
+
     try:
-        NUM_EPISODES = 1
+        num_episodes = 1
 
-        env = raw_env(params)
+        env.reset()
 
-        infos = env.reset(seed=1)
-        h.print_infos(infos)
-
-        paths = PrioritizedPlanner.plan(grid=env.global_obs,
-                                        remaining_time_limit=env.args.episode_length,
-                                        start_positions=env.agent_positions,
-                                        agents=env.agents,
-                                        rng=env.rng)
+        actions = PrioritizedPlanner.plan(remaining_time_limit=env.args.max_timestep,
+                                          start_positions=env.agent_positions,
+                                          goal_positions=env.goal_positions,
+                                          trajectories=[],
+                                          rng=env.rng,
+                                          no_wall=env.on_no_wall,
+                                          inside_grid=env.inside_grid)
         done = False
         input()
 
-        for _ in range(NUM_EPISODES):
+        for _ in range(num_episodes):
             while not done:
                 action_dict: dict[str, h.Action] = {}
-                for a in env.agents:
-                    if env.timestep >= len(paths[a.agent_name]):
-                        action_dict[a.agent_name] = h.Action.DO_NOTHING
+                for i in env.agent_idx:
+                    agent_name = f"agent_{i}"
+                    if env.timestep >= len(actions[agent_name]):
+                        action_dict[agent_name] = h.Action.DO_NOTHING
                         continue
-                    action_dict[a.agent_name] = paths[a.agent_name][env.timestep]
-                terminated, truncated, infos = env.step(action_dict=action_dict)
+                    action_dict[agent_name] = actions[agent_name][env.timestep]
+                terminated, truncated = env.step(action_dict=action_dict)
                 done = terminated or truncated
                 input()
+        env.close()
     except KeyboardInterrupt:
-        pass
+        env.close()
 
 if __name__ == "__main__":
     main()

@@ -29,6 +29,7 @@ class Zone():
         assert self.empty(), \
             f"occupied_tiles needs to be empty before spawning, got {self.occupied_tiles}"
         self.occupied_tiles.append(start_pos)
+        self.progress()
 
     def spread(self, *,
                rng: np.random.Generator,
@@ -46,14 +47,14 @@ class Zone():
             for act in  h.ACTS_ARR[:-1]: # last action is "DO_NOTHING"
                 new_pos: h.PositionT = pos+h.ACT_TO_DIR[act]
 
+                # cannot spread if outside grid,
                 # cannot spread to tiles that already contain zone,
                 # cannot spread if prob does not hit,
-                # cannot spread if on wall tile,
-                # cannot spread if outside grid
-                if on_zone(new_pos) or \
+                # cannot spread if on wall tile
+                if not inside_grid(new_pos) or \
+                   on_zone(new_pos) or \
                    rng.random() > self.dir_spread_probs[act] or \
-                   not no_wall(new_pos) or \
-                   not inside_grid(new_pos):
+                   not no_wall(new_pos):
                     continue
 
                 newly_occupied_tiles.append(new_pos)

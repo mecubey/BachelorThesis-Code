@@ -5,10 +5,11 @@ Contains the implementation of the PathTask enviroment.
 import time
 from typing import Any, cast
 import numpy as np
-from .agent import EnvAgent
+import matplotlib as plt
 from .zone import Zone
 from .maze import gen_maze
 from . import header as h
+import matplotlib.pyplot as plt
 
 class PathTaskMultiAgentEnv:
     """
@@ -37,8 +38,16 @@ class PathTaskMultiAgentEnv:
 
         # AGENTS
         self.agent_idx = list(range(args.num_agents)) # to randomly iterate through agents
-        self.agent_positions: h.IntArr # much more efficient to calculate dx, dy this way
-        self.agents: list[EnvAgent] = [EnvAgent(i) for i in self.agent_idx]
+        self.agent_positions: h.IntArr
+        self.goal_positions: h.IntArr
+
+        # RENDERING
+        self.figure: Any = None
+        self.ax: Any = None
+        self.agent_scat: Any = None
+        self.goal_scat: Any = None
+        self.image: Any = None
+        self.colors = plt.colormaps["tab20"](np.linspace(0, 1, args.num_agents))
 
         # ZONE
         self.zone = Zone(dir_spread_probs=args.dir_spread_probs,
@@ -100,15 +109,6 @@ class PathTaskMultiAgentEnv:
         self.agent_positions[a_idx] += direction
         self.set_agent_grid(self.agent_positions[a_idx], True)
 
-    def set_infos(self, infos: dict[str, Any]):
-        """
-        Given an empty infos dictionary, sets its infos accordingly to env state.
-        """
-        assert len(infos) == 0
-
-        for agent in self.agents:
-            infos[agent.agent_name] = agent.to_dict(pos=self.agent_positions[agent.agent_id])
-
     def is_action_valid(self, *, action: h.Action, a_idx: int) -> bool:
         """
         Checks for validity of given action.
@@ -116,16 +116,12 @@ class PathTaskMultiAgentEnv:
         return self.walkable(self.agent_positions[a_idx]+h.ACT_TO_DIR[action])
 
     def reset(self, *,
-              seed: int|None = None) -> dict[str, Any]:
+              seed: int|None = None) -> None:
         """
         Resets the enviroment's attributes. Returns infos.
         """
         if seed is not None:
             self.rng = np.random.default_rng(seed)
-
-            # set colors of agents
-            for a in self.agents:
-                a.agent_color = h.rand_color(self.rng)
 
         self.timestep = 0
 
@@ -146,7 +142,8 @@ class PathTaskMultiAgentEnv:
         agent_goal_positions_idx = self.rng.choice(num_free_tiles,
                                                    size=self.args.num_agents,
                                                    replace=False)
-        free_tiles_mask[agent_goal_positions_idx] = 0
+        self.goal_positions = self.free_tiles[agent_goal_positions_idx]
+        free_tiles_mask[agent_goal_positions_idx] = False
 
         # generate all non-overlapping agent positions
         # make sure agents and goals do not overlap
@@ -155,21 +152,14 @@ class PathTaskMultiAgentEnv:
                                                replace=False)
 
         # set agents in grid and their goal positions
-        for agent in self.agents:
-            self.set_agent_grid(self.agent_positions[agent.agent_id], True)
-            agent.goal_pos = self.free_tiles[agent_goal_positions_idx[agent.agent_id]]
-
-        infos: dict[str, Any] = {}
-        if self.args.with_debug_infos:
-            self.set_infos(infos)
+        for i in self.agent_idx:
+            self.set_agent_grid(self.agent_positions[i], True)
 
         if self.args.render_mode == "human":
-            self.render()
+            self.render_setup()
             time.sleep(self.args.delay_btw_frames)
 
-        return infos
-
-    def step(self, action_dict: dict[str, h.Action]) -> tuple[bool, bool, dict[str, Any]]:
+    def step(self, action_dict: dict[str, h.Action]) -> tuple[bool, bool]:
         """
         Step through the enviroment with a given action dictionary.\n
         The action dictionary has the form
@@ -190,7 +180,7 @@ class PathTaskMultiAgentEnv:
             self.zone.spawn(start_pos=zone_start_pos)
             self.set_zone_grid(zone_start_pos, True) # set starting zone inside grid
 
-        # randomly spread randomly in cardinal directions if now spawned in this timestep
+        # randomly spread randomly in cardinal directions if spawned in this timestep
         if self.rng.random() <= self.args.spread_prob and not spawned:
             new_spread_tiles: list[h.PositionT] = self.zone.spread(rng=self.rng,
                                                                    on_zone=self.on_zone,
@@ -205,10 +195,11 @@ class PathTaskMultiAgentEnv:
             self.zone.reset()
 
         for i in self.agent_idx:
-            if self.is_action_valid(action=action_dict[self.agents[i].agent_name],
+            agent_name = f"agent_{i}"
+            if self.is_action_valid(action=action_dict[agent_name],
                                     a_idx=i):
                 self.move_agent(a_idx=i,
-                                direction=h.ACT_TO_DIR[action_dict[self.agents[i].agent_name]])
+                                direction=h.ACT_TO_DIR[action_dict[agent_name]])
 
         # check for collisions
         # check for goal completion status
@@ -223,22 +214,18 @@ class PathTaskMultiAgentEnv:
 
                     # reverse last action
                     self.move_agent(a_idx=c,
-                                    direction=h.reverse_dir(action_dict[self.agents[c].agent_name]))
+                                    direction=h.reverse_dir(action_dict[f"agent_{c}"]))
 
-            if self.agents[i].on_goal(self.agent_positions[i]):
+            if (self.agent_positions[i] == self.goal_positions[i]).all():
                 num_agents_on_goal += 1
 
         truncated = False
-        if self.timestep == self.args.episode_length:
+        if self.timestep == self.args.max_timestep:
             truncated = True
 
         terminated = False
         if num_agents_on_goal == self.args.num_agents:
             terminated = True
-
-        infos: dict[str, Any] = {}
-        if self.args.with_debug_infos:
-            self.set_infos(infos)
 
         if self.args.render_mode == "human":
             self.render()
@@ -246,43 +233,62 @@ class PathTaskMultiAgentEnv:
 
         self.timestep += 1
 
-        return terminated, truncated, infos
+        return terminated, truncated
+
+    def gen_img_from_grid(self) -> h.FloatArr:
+        """
+        Generate an image from the enviroment grid with
+        walls and current zone tiles set.
+        """
+
+        # base: white free, black wall
+        img = np.ones((self.global_obs.shape[0], self.global_obs.shape[1], 3), dtype=h.DTYPE_FLOAT)
+        img[self.global_obs[:, :, h.GridOffsets.NO_WALL] == 0] = [0, 0, 0]
+
+        # zone: light red tint
+        zone_mask = self.global_obs[:, :, h.GridOffsets.ZONE] == 1
+        img[zone_mask] = [1.0, 0.7, 0.7]
+
+        return img
+
+    def render_setup(self) -> None:
+        """
+        Sets up rendering variables.
+        """
+        plt.ion()  # type: ignore
+        self.figure, self.ax = plt.subplots() # type: ignore
+
+        img = self.gen_img_from_grid()
+
+        self.image = self.ax.imshow(img)
+        self.ax.axis("off")
+
+        # NOTE: plt has (x, y) as in traditional coordinate system
+        self.goal_scat = self.ax.scatter(self.goal_positions[:, 1],
+                                         self.goal_positions[:, 0],
+                                         c=self.colors, marker="P", edgecolors="black",
+                                         s=3500 / self.grid_dim)
+        self.agent_scat = self.ax.scatter(self.agent_positions[:, 1],
+                                          self.agent_positions[:, 0],
+                                          c=self.colors, marker="o", edgecolors="black",
+                                          s=2000 / self.grid_dim)
 
     def render(self) -> None:
         """
         Renders the enviroment.
         """
-        goal_positions: h.IntArr = np.array([a.goal_pos for a in self.agents],
-                                            dtype=h.DTYPE_INT)
-        dim: int = self.global_obs.shape[0]
+        img = self.gen_img_from_grid()
+        self.image.set_data(img)
+        self.agent_scat.set_offsets(np.c_[self.agent_positions[:, 1],
+                                          self.agent_positions[:, 0]])
+        self.goal_scat.set_offsets(np.c_[self.goal_positions[:, 1],
+                                         self.goal_positions[:, 0]])
+        plt.draw()
 
-        for row in range(dim):
-            for col in range(dim):
-                pos: h.PositionT = np.array([row, col])
-
-                # if zone on tile
-                tmp_zone_char: str = ""
-                if self.on_zone(pos):
-                    tmp_zone_char = h.ZONE_COL
-
-                # if agent on tile
-                if self.on_agent(pos):
-                    a_idx: int = np.where((self.agent_positions == pos).all(axis=1))[0][0]
-                    print(tmp_zone_char + self.agents[a_idx].agent_color + h.AGENT_CHAR, end="")
-                    continue
-
-                # if goal on tile
-                if (goal_positions == pos).all(axis=1).any():
-                    g_idx: int = np.where((goal_positions == pos).all(axis=1))[0][0]
-                    print(tmp_zone_char + self.agents[g_idx].agent_color + h.GOAL_CHAR, end="")
-                    continue
-
-                # if wall on tile
-                if not self.on_no_wall(np.array(pos)):
-                    print(tmp_zone_char + h.WALL_CHAR, end="")
-                    continue
-
-                # if nothing else, print empty space
-                print(tmp_zone_char + " " + h.Style.RESET_ALL, end="")
-
-            print()
+    def close(self) -> None:
+        """
+        Closes generated plt window.
+        """
+        if self.args.render_mode == "human":
+            plt.ioff() # type: ignore
+            plt.close(self.figure)
