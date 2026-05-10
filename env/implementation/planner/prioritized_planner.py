@@ -2,83 +2,85 @@
 Priority based planner using SIPP.
 """
 
+from typing import cast
 from .sipp import plan
 from .. import header as h
-from .sipp import SIPPNode
-from typing import Callable
+from ..node import NodePath
+from ..grid import Grid
+from ..reservation_table import ReservationTable
+from ..safe_interval_table import SafeIntervalTable
 import numpy as np
 
 class PrioritizedPlanner():
     """
     Prioritized planner utilizing SIPP for multi agent path planning.
     """
-    @staticmethod
-    def plan(*,
-             remaining_time_limit: int,
-             start_positions: h.IntArr,
-             goal_positions: h.IntArr,
-             trajectories: list[list[h.PositionT]],
-             rng: np.random.Generator,
-             no_wall: Callable[[h.PositionT], bool],
-             inside_grid: Callable[[h.PositionT], bool]) -> dict[str, list[h.Action]]:
-        """
-        Get plans for multiple agents.
-        """
-        agent_idx: list[int] = list(range(len(start_positions)))
+    def __init__(self,
+                 grid: Grid,
+                 time_limit: int,
+                 seed: int|None = None) -> None:
+        self.grid: Grid = grid
+        self.time_limit: int = time_limit
+        self.rng: np.random.Generator = np.random.default_rng(seed)
+        self.reservations: ReservationTable = ReservationTable(time_limit)
+        self.safe_intervals: SafeIntervalTable = SafeIntervalTable(time_limit, self.reservations)
+        self.paths: dict[str, NodePath] = {}
 
-        goal_mask = np.ones(len(goal_positions), h.DTYPE_BOOL)
-        start_pos_mask = np.ones(len(goal_positions), h.DTYPE_BOOL)
+    def get_actions_at(self, t: int) -> dict[str, h.Action]:
+        """Get the action of each agent at a specific timestep.
 
-        paths: list[list[h.PositionT]] = []
-        all_movements_taken: dict[str, list[h.Action]] = {}
+        Args:
+            t (int): specified timestep
+
+        Returns:
+            dict[str, h.Action]: Action dictionary, has form {"agent_0": act_of_0, ...}
+        """
+        action_dictionary: dict[str, h.Action] = {}
+        for a_name in self.grid.agent_names:
+            action_dictionary[a_name] = self.paths[a_name].get_action_at(t)
+        return action_dictionary
+
+    def initial_plan(self) -> None:
+        """
+        Sets the plans for all agents at the start of the episode.\n
+        Use get_actions_at to get actions for each agent.
+        """
+        entire_episode_interval = h.Interval(0, self.time_limit)
+
+        # reserve starting positions for entire episode
+        for pos in self.grid.agent_positions:
+            self.reservations.reserve_interval(pos, entire_episode_interval)
+
+        # reserve goal positions for entire episode
+        for pos in self.grid.goal_positions:
+            self.reservations.reserve_interval(pos, entire_episode_interval)
+
+        # build safe intervals
+        self.safe_intervals.build_entire_table()
 
         # for now, random priorities
-        for i in h.randomly(agent_idx, rng):
-            # remove initial position of this agent
-            start_pos_mask[i] = False
+        for i in h.randomly(list(range(self.grid.num_agents)), self.rng):
+            i = cast(int, i)
 
-            # remove goal position of this agent
-            goal_mask[i] = False
+            # remove start position reservation of agent i
+            self.reservations.clear_reserved_interval(self.grid.agent_positions[i],
+                                                      entire_episode_interval)
+            # rebuild safe intervals at start position of agent i
+            self.safe_intervals.build_safe_intervals_at(self.grid.agent_positions[i])
 
-            # get path from planner for this agent
-            nodes = plan(start=start_positions[i],
-                         goal=goal_positions[i],
-                         trajs=paths+
-                               np.expand_dims(start_positions[start_pos_mask], axis=1).tolist()+
-                               np.expand_dims(goal_positions[goal_mask], axis=1).tolist()+
-                               trajectories,
-                         time_limit=remaining_time_limit,
-                         no_wall=no_wall,
-                         inside_grid=inside_grid)
+            # remove goal position reservation of agent i
+            self.reservations.clear_reserved_interval(self.grid.goal_positions[i],
+                                                      entire_episode_interval)
+            # rebuild safe intervals at goal position of agent i
+            self.safe_intervals.build_safe_intervals_at(self.grid.goal_positions[i])
 
-            all_node_positions, movements_taken = PrioritizedPlanner \
-                                                  .get_path_and_actions_from_nodes(nodes)
+            nodes = plan(grid=self.grid,
+                         t=0,
+                         time_limit=self.time_limit,
+                         reservations=self.reservations,
+                         safe_intervals=self.safe_intervals,
+                         start=self.grid.agent_positions[i],
+                         goal=self.grid.goal_positions[i])
 
-            paths.append(all_node_positions)
-            all_movements_taken[f"agent_{i}"] = movements_taken
-
-        return all_movements_taken
-
-    @staticmethod
-    def get_path_and_actions_from_nodes(nodes: list[SIPPNode]) -> tuple[list[h.PositionT],
-                                                                        list[h.Action]]:
-        """
-        Given a list of SIPP nodes, computes the positions occupied and
-        the actions taken on that path.
-        """
-        # get the actual movements taken for each timestep
-        movements_taken: list[h.Action] = []
-
-        # get the position the agent is in for each timestep
-        node_positions: list[h.PositionT] = []
-
-        for j in range(len(nodes)-1):
-            for _ in range((nodes[j+1].t-nodes[j].t)-1):
-                node_positions.append(nodes[j].position)
-                movements_taken.append(h.Action.DO_NOTHING)
-            node_positions.append(nodes[j].position)
-            direction: h.PositionT = nodes[j+1].position-nodes[j].position
-            movements_taken.append(h.dir_to_act(direction))
-        node_positions.append(nodes[-1].position)
-
-        return node_positions, movements_taken
+            self.paths[self.grid.agent_names[i]] = \
+            NodePath.init_and_build_safe_intervals(nodes, self.safe_intervals)
