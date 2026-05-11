@@ -7,14 +7,14 @@ from implementation.planner.prioritized_planner import PrioritizedPlanner
 from implementation.path_task_env import PathTaskMultiAgentEnv
 
 params = h.EnvParams(
-    num_agents=20,
-    maze_intensity=0.5,
+    num_agents=10,
+    maze_intensity=0,
     spawn_prob=1,
     spread_prob=1,
     max_num_spread=5,
     dir_spread_probs=[0.6, 0.7, 0.55, 0.8],
     max_timestep=150,
-    field_dim=12,
+    field_dim=10,
     render_mode="human"
 )
 
@@ -47,9 +47,9 @@ def main():
 
             done = False
             while not done:
-                action_dict: dict[str, h.Action] = planner.get_actions_at(env.timestep)
-                terminated, truncated = env.step(action_dict=action_dict)
-                done = terminated or truncated
+                actions_dict = planner.get_actions_at(env.timestep)
+                termination, truncation = env.step(actions_dict)
+                done = termination or truncation
                 input()
     except KeyboardInterrupt:
         pass

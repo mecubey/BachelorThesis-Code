@@ -20,6 +20,13 @@ class Interval:
     start_time: int
     end_time: int
 
+    def contains_timestep(self, t: int) -> bool:
+        """
+        True if this interval contains the specified timestep,
+        false otherwise.
+        """
+        return t >= self.start_time and t <= self.end_time
+
 @dataclass(order=True, frozen=False)
 class Position:
     """
@@ -155,3 +162,15 @@ def randomly(l: list[Any], rng: np.random.Generator) -> list[Any]:
     """
     rng.shuffle(l)
     return l
+
+def replace_item_with_multiple(arr: list[Any], elem: Any, new_elems: list[Any]):
+    """
+    Given a list, an element and multiple new values,
+    replaces the element in the list with multiple new values.
+    """
+    for item in arr:
+        if item == elem:
+            for new_item in new_elems:
+                yield new_item
+        else:
+            yield item

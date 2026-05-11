@@ -18,7 +18,6 @@ from .. import header as h
 from ..node import Node
 from ..grid import Grid
 from ..reservation_table import ReservationTable
-from ..safe_interval_table import SafeIntervalTable
 import heapq
 from dataclasses import dataclass
 from functools import total_ordering
@@ -28,7 +27,6 @@ def plan(*,
          t: int,
          time_limit: int,
          reservations: ReservationTable,
-         safe_intervals: SafeIntervalTable,
          start: h.Position,
          goal: h.Position) -> list[SIPPNode]:
     """
@@ -40,7 +38,8 @@ def plan(*,
     open_set: list[SIPPNode] = []
     heapq.heappush(open_set, SIPPNode(position=start,
                                       t=t, # we start at time t
-                                      safe_interval=safe_intervals.get_safe_intervals_at(start)[0],
+                                      safe_interval=reservations.safe_intervals
+                                                    .get_safe_intervals_at(start)[0],
                                       g=0,
                                       c=0,
                                       h=calculate_heuristic(start, goal),
@@ -79,7 +78,6 @@ def plan(*,
                                   [expanded_node.safe_interval] = expanded_node.t
 
         successors = generate_successors(grid=grid,
-                                         safe_intervals=safe_intervals,
                                          reservations=reservations,
                                          parent_node=expanded_node,
                                          goal=goal,
@@ -92,7 +90,6 @@ def plan(*,
 
 def generate_successors(*,
                         grid: Grid,
-                        safe_intervals: SafeIntervalTable,
                         reservations: ReservationTable,
                         parent_node: SIPPNode,
                         goal: h.Position,
@@ -112,7 +109,7 @@ def generate_successors(*,
         start_t = parent_node.t+1
         end_t = parent_interval.end_time+1
 
-        intervals = safe_intervals.get_safe_intervals_at(cfg)
+        intervals = reservations.safe_intervals.get_safe_intervals_at(cfg)
 
         for i in intervals:
             if i.start_time > end_t or i.end_time < start_t:

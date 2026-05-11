@@ -3,6 +3,7 @@ Contains ReservationTable class.
 """
 
 from . import header as h
+from .safe_interval_table import SafeIntervalTable
 from collections import defaultdict
 
 class ReservationTable:
@@ -11,8 +12,10 @@ class ReservationTable:
     Used to reserve positions at specific timesteps.
     """
     def __init__(self, max_timestep: int) -> None:
+        self.max_timestep = max_timestep
         self.table: dict[h.Position, bytearray] = defaultdict(lambda:
-                                                            bytearray(max_timestep + 1))
+                                                              bytearray(max_timestep + 1))
+        self.safe_intervals: SafeIntervalTable = SafeIntervalTable(max_timestep)
 
     def reservations_at(self, pos: h.Position) -> bytearray:
         """
@@ -26,7 +29,7 @@ class ReservationTable:
         """
         return self.table[pos]
 
-    def reserve_position(self, pos: h.Position, t: int):
+    def reserve_position(self, pos: h.Position, t: int, build_safe_intervals: bool = False):
         """Reserve a position at a specified timestep.
 
         Args:
@@ -38,7 +41,10 @@ class ReservationTable:
 
         self.table[pos][t] = 1
 
-    def clear_reserved_position(self, pos: h.Position, t: int):
+        if build_safe_intervals:
+            self.safe_intervals.set_safe_intervals_reserved_timestep(pos, t)
+
+    def clear_reserved_position(self, pos: h.Position, t: int, build_safe_intervals: bool = False):
         """Clear a reserved position at a specified timestep.
 
         Args:
@@ -50,6 +56,9 @@ class ReservationTable:
 
         self.table[pos][t] = 0
 
+        if build_safe_intervals:
+            self.safe_intervals.set_safe_intervals_cleared_timestep(pos, t)
+
     def reserve_interval(self, pos: h.Position, interval: h.Interval):
         """Reserve a position for a specified interval
 
@@ -58,7 +67,8 @@ class ReservationTable:
             interval (h.Interval): h.Interval to be reserved.
         """
         for t in range(interval.start_time, interval.end_time+1):
-            self.reserve_position(pos, t)
+            self.reserve_position(pos, t, False)
+        self.safe_intervals.set_safe_intervals_reserved_interval(pos, interval)
 
     def clear_reserved_interval(self, pos: h.Position, interval: h.Interval):
         """Clear reservations of a position for a specified interval
@@ -68,7 +78,8 @@ class ReservationTable:
             interval (h.Interval): h.Interval to be cleared.
         """
         for t in range(interval.start_time, interval.end_time+1):
-            self.clear_reserved_position(pos, t)
+            self.clear_reserved_position(pos, t, False)
+        self.safe_intervals.set_safe_intervals_cleared_interval(pos, interval)
 
     def is_reserved(self, pos: h.Position, t: int) -> bool:
         """Returns true if the position is reserved for the specified timestep, false otherwise.

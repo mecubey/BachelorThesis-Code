@@ -8,7 +8,6 @@ from .. import header as h
 from ..node import NodePath
 from ..grid import Grid
 from ..reservation_table import ReservationTable
-from ..safe_interval_table import SafeIntervalTable
 import numpy as np
 
 class PrioritizedPlanner():
@@ -23,7 +22,6 @@ class PrioritizedPlanner():
         self.time_limit: int = time_limit
         self.rng: np.random.Generator = np.random.default_rng(seed)
         self.reservations: ReservationTable = ReservationTable(time_limit)
-        self.safe_intervals: SafeIntervalTable = SafeIntervalTable(time_limit, self.reservations)
         self.paths: dict[str, NodePath] = {}
 
     def get_actions_at(self, t: int) -> dict[str, h.Action]:
@@ -55,9 +53,6 @@ class PrioritizedPlanner():
         for pos in self.grid.goal_positions:
             self.reservations.reserve_interval(pos, entire_episode_interval)
 
-        # build safe intervals
-        self.safe_intervals.build_entire_table()
-
         # for now, random priorities
         for i in h.randomly(list(range(self.grid.num_agents)), self.rng):
             i = cast(int, i)
@@ -65,22 +60,17 @@ class PrioritizedPlanner():
             # remove start position reservation of agent i
             self.reservations.clear_reserved_interval(self.grid.agent_positions[i],
                                                       entire_episode_interval)
-            # rebuild safe intervals at start position of agent i
-            self.safe_intervals.build_safe_intervals_at(self.grid.agent_positions[i])
 
             # remove goal position reservation of agent i
             self.reservations.clear_reserved_interval(self.grid.goal_positions[i],
                                                       entire_episode_interval)
-            # rebuild safe intervals at goal position of agent i
-            self.safe_intervals.build_safe_intervals_at(self.grid.goal_positions[i])
 
             nodes = plan(grid=self.grid,
                          t=0,
                          time_limit=self.time_limit,
                          reservations=self.reservations,
-                         safe_intervals=self.safe_intervals,
                          start=self.grid.agent_positions[i],
                          goal=self.grid.goal_positions[i])
 
             self.paths[self.grid.agent_names[i]] = \
-            NodePath.init_and_build_safe_intervals(nodes, self.safe_intervals)
+            NodePath.init_and_build_safe_intervals(nodes, self.reservations)

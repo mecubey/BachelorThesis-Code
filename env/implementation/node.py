@@ -4,7 +4,7 @@ Contains node related classes.
 
 from . import header as hd
 from typing import Sequence
-from .safe_interval_table import SafeIntervalTable
+from .reservation_table import ReservationTable
 from dataclasses import dataclass
 from functools import total_ordering
 
@@ -51,7 +51,7 @@ class NodePath:
         self.actions_taken_at_time: dict[int, hd.Action] = actions_taken_at_time
 
     @classmethod
-    def init_and_build_safe_intervals(cls, path: Sequence[Node], safe_intervals: SafeIntervalTable):
+    def init_and_build_safe_intervals(cls, path: Sequence[Node], table: ReservationTable):
         """
         Initialize the NodePath while reserving positions.
         """
@@ -62,18 +62,15 @@ class NodePath:
             for t in range(path[j].t, path[j-1].t-1):
                 positions_at_time[t] = path[j].position
                 actions_taken_at_time[t] = hd.Action.DO_NOTHING
-                safe_intervals.reservations.reserve_position(path[j].position, t)
             positions_at_time[path[j-1].t-1] = path[j].position
-            safe_intervals.reservations.reserve_position(path[j].position, path[j-1].t-1)
-            safe_intervals.build_safe_intervals_at(path[j].position)
+            table.reserve_interval(path[j].position, hd.Interval(path[j].t, path[j-1].t-1))
             direction: hd.Position = path[j-1].position-path[j].position
             actions_taken_at_time[path[j-1].t-1] = hd.DIR_TO_ACT[direction]
         positions_at_time[path[0].t] = path[0].position
-        safe_intervals.reservations.reserve_interval(path[0].position,
-                                                     # reserve from t until end of episode
-                                                     hd.Interval(path[0].t,
-                                                                 safe_intervals.max_timestep))
-        safe_intervals.build_safe_intervals_at(path[0].position)
+
+        # reserve from t until end of episode
+        table.reserve_interval(path[0].position, hd.Interval(path[0].t, table.max_timestep))
+
         return cls(path, positions_at_time, actions_taken_at_time)
 
     def get_position_at(self, t: int) -> hd.Position:
