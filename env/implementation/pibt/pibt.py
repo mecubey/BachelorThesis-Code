@@ -3,7 +3,7 @@
 from .dist_table import DistTable
 import numpy as np
 from ..grid import Grid
-from ..header import Position, DIR_TO_ACT, Action, Config
+from ..header import Position, DIR_TO_ACT, Action
 
 class PIBT:
     """
@@ -77,7 +77,7 @@ class PIBT:
         # used for tie-breaking
         self.rng = np.random.default_rng(seed)
 
-    def func_pibt(self, q_from: Config, q_to: Config, i: int) -> bool:
+    def func_pibt(self, q_from: list[Position], q_to: list[Position], i: int) -> bool:
         """
         Core PIBT function for single agent planning with priority inheritance.
 
@@ -142,7 +142,7 @@ class PIBT:
             Next actions for each agent.
         """
         # setup
-        q_to: Config = Config()
+        q_to: list[Position] = []
         for i, v in enumerate(self.grid.agent_positions):
             q_to.append(self.nil_coord)
             self.occupied_now[*v] = i

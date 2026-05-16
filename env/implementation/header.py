@@ -2,39 +2,12 @@
 Provides utility types, functions, constants.
 """
 
-from dataclasses import dataclass, field
+from dataclasses import dataclass
 from enum import IntEnum
 from typing import Any
 import numpy as np
 
 # classes
-from dataclasses import dataclass
-import numpy as np
-
-@dataclass(frozen=True)
-class Interval:
-    """
-    Container class for intervals.\n
-    Note that `end_time` is inclusive.
-    """
-    start_time: int
-    end_time: int
-
-    def contains_timestep(self, t: int) -> bool:
-        """
-        True if this interval contains the specified timestep,
-        false otherwise.
-        """
-        return t >= self.start_time and t <= self.end_time
-
-    def contains_interval(self, interval: Interval) -> bool:
-        """
-        True if this interval contains the specified interval,
-        false otherwise.
-        """
-        return (self.start_time <= interval.start_time and
-                interval.end_time <= self.end_time)
-
 @dataclass(order=True, frozen=True)
 class Position:
     """
@@ -76,35 +49,6 @@ class Position:
     def __hash__(self):
         return hash((self.x, self.y))
 
-@dataclass
-class Config:
-    """Represents a list of positions."""
-    positions: list[Position] = field(default_factory=lambda: [])
-
-    def __getitem__(self, k: int) -> Position:
-        return self.positions[k]
-
-    def __setitem__(self, k: int, coord: Position) -> None:
-        self.positions[k] = coord
-
-    def __len__(self) -> int:
-        return len(self.positions)
-
-    def __iter__(self):
-        return iter(self.positions)
-
-    def __hash__(self) -> int:
-        return hash(tuple(self.positions))
-
-    def append(self, coord: Position) -> None:
-        """
-        Append a new position to this config.
-
-        Args:
-            coord (Position): Position that will be appended.
-        """
-        self.positions.append(coord)
-
 # dtypes
 DTYPE_INT = np.int32
 
@@ -118,8 +62,6 @@ IntArr = np.typing.NDArray[DTYPE_INT]
 FloatArr = np.typing.NDArray[DTYPE_FLOAT]
 
 BoolArr = np.typing.NDArray[DTYPE_BOOL]
-
-Configs = list[Config]
 
 @dataclass
 class EnvParams:

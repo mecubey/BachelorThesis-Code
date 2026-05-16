@@ -3,7 +3,6 @@ Grid class to manage reservations and checking cell states.
 """
 
 from .header import (Position,
-                     Config,
                      IntArr,
                      Action,
                      ACT_TO_DIR,
@@ -25,8 +24,8 @@ class Grid:
         self.max_timestep = max_timestep
         self.num_agents = num_agents
         self.agent_idx = list(range(num_agents))
-        self.agent_positions: Config = Config(agent_positions)
-        self.goal_positions: Config = Config(goal_positions)
+        self.agent_positions: list[Position] = agent_positions
+        self.goal_positions: list[Position] = goal_positions
 
     @property
     def dim(self) -> int:
