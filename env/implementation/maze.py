@@ -75,15 +75,17 @@ def gen_maze(*,
                                             iter_c=iter_c)
 
     # randomly remove walls from cells which are not reached by the graph
-    unreach_idx_base: h.IntArr = np.arange(2, 1+2*(dim-1), 2, dtype=h.DTYPE_INT)
+    unreach_idx_base: h.IntArr = np.arange(2, 2*dim-1, 2, dtype=h.DTYPE_INT)
     unreach_no_walls: h.BoolArr = rng.choice([0, 1],
                                              size=((dim-1)*(dim-1)),
                                              p=[maze_intensity,
                                              1-maze_intensity])
-    grid_indices: h.IntArr = np.array(list(product(unreach_idx_base, unreach_idx_base)),
-                                      dtype=h.DTYPE_INT)
-    maze_buffer[grid_indices[:, 0], grid_indices[:, 1], h.GridOffsets.NO_WALL] = unreach_no_walls
-    free_tiles: list[h.IntArr] = grid_indices[unreach_no_walls].tolist()
+    grid_positions: h.IntArr = np.array(list(product(unreach_idx_base, unreach_idx_base)),
+                                        dtype=h.DTYPE_INT)
+    maze_buffer[grid_positions[:, 0],
+                grid_positions[:, 1],
+                h.GridOffsets.NO_WALL] = unreach_no_walls
+    free_tiles: list[h.IntArr] = []
 
     for i in range(dim):
         for j in range(dim):

@@ -2,24 +2,31 @@
 Grid class to manage reservations and checking cell states.
 """
 
-from . import header as h
+from .header import (Position,
+                     Config,
+                     IntArr,
+                     Action,
+                     ACT_TO_DIR,
+                     GridOffsets,
+                     DIR_ARR)
 
 class Grid:
     """
     Represents a 2D grid with walls, zones, agents and agents' goals.
     """
     def __init__(self, *,
-                 field: h.IntArr,
+                 field: IntArr,
+                 max_timestep: int,
                  num_agents: int,
-                 agent_positions: list[h.Position],
-                 goal_positions: list[h.Position]) -> None:
+                 agent_positions: list[Position],
+                 goal_positions: list[Position]) -> None:
         # each cell contains [is_no_wall, is_zone, is_agent]
         self.field = field
+        self.max_timestep = max_timestep
         self.num_agents = num_agents
         self.agent_idx = list(range(num_agents))
-        self.agent_names = [f"agent_{i}" for i in self.agent_idx]
-        self.agent_positions: list[h.Position] = agent_positions
-        self.goal_positions: list[h.Position] = goal_positions
+        self.agent_positions: Config = Config(agent_positions)
+        self.goal_positions: Config = Config(goal_positions)
 
     @property
     def dim(self) -> int:
@@ -29,7 +36,7 @@ class Grid:
         """
         return self.field.shape[0]
 
-    def is_agent_on_goal(self, a_idx: int):
+    def is_agent_on_goal(self, a_idx: int) -> bool:
         """
         Returns true if the specified agent is on its' goal,
         false otherwise.
@@ -38,16 +45,16 @@ class Grid:
             a_idx (int): Specified agent.
 
         Returns:
-            _type_: `True` if agent on goal, `False` otherwise.
+            bool: `True` if agent on goal, `False` otherwise.
         """
         return self.agent_positions[a_idx] == self.goal_positions[a_idx]
 
-    def move_agent_in_grid(self, a_idx: int, action: h.Action):
+    def move_agent_in_grid(self, a_idx: int, action: Action):
         """Moves the specified agent in the actual grid.
 
         Args:
             a_idx (int): Index of agent to be moved.
-            action (h.Action): Action of agent.
+            action (Action): Action of agent.
 
         If action is illegal (moving into wall or another agent), agent stays still.
         """
@@ -57,82 +64,92 @@ class Grid:
             return
 
         self.set_agent_in_grid(self.agent_positions[a_idx], False)
-        self.agent_positions[a_idx] += h.ACT_TO_DIR[action]
+        self.agent_positions[a_idx] += ACT_TO_DIR[action]
         self.set_agent_in_grid(self.agent_positions[a_idx], True)
 
-    def set_zone_in_grid(self, pos: h.Position, val: bool):
+    def set_zone_in_grid(self, pos: Position, val: bool):
         """
         Sets/Removes the zone at a specified position.
 
         Args:
-            pos (h.Position): h.Position where zone is set/removed.
+            pos (Position): Position where zone is set/removed.
         """
-        self.field[*pos, h.GridOffsets.ZONE] = int(val)
+        self.field[*pos, GridOffsets.ZONE] = int(val)
 
-    def set_agent_in_grid(self, pos: h.Position, val: bool):
+    def set_agent_in_grid(self, pos: Position, val: bool):
         """
         Sets/Removes an agent at a specified position.
 
         Args:
-            pos (h.Position): h.Position where the agent is set/removed.
+            pos (Position): Position where the agent is set/removed.
         """
-        self.field[*pos, h.GridOffsets.AGENT] += 1 if val else -1
+        self.field[*pos, GridOffsets.AGENT] += 1 if val else -1
 
-    def walkable(self, pos: h.Position) -> bool:
+    def get_neighbours_at(self, pos: Position) -> list[Position]:
         """
-        Returns true if an agent could stand on a given position.\n
-        False otherwise.
-        """
-        return not self.contains_wall(pos) and not self.contains_agent(pos)
+        Get valid neighbouring coordinates (4-connected grid).
 
-    def is_action_valid(self, pos: h.Position, action: h.Action) -> bool:
+        Args:
+            grid: Grid object representing the map.
+            pos: Center position (x, y).
+
+        Returns:
+            List of valid neighbouring coordinates in 4 directions (left, right,
+            up, down). Empty list of no valid neighbours.
+        """
+        neighbours: list[Position] = []
+        for direction in DIR_ARR:
+            new_neighbour: Position = pos+direction
+            if not self.contains_wall(new_neighbour):
+                neighbours.append(new_neighbour)
+        return neighbours
+
+    def is_action_valid(self, pos: Position, action: Action) -> bool:
         """
         Checks for validity of given action.
         """
-        if action == h.Action.DO_NOTHING:
-            return not self.contains_wall(pos)
-        return self.walkable(pos+h.ACT_TO_DIR[action])
+        return not self.contains_wall(pos+ACT_TO_DIR[action])
 
-    def contains_agent(self, pos: h.Position) -> bool:
+    def contains_agent(self, pos: Position) -> bool:
         """Returns true if the position contains atleast one agent, false otherwise.
 
         Args:
-            pos (h.Position): h.Position to be checked.
+            pos (Position): Position to be checked.
 
         Returns:
             bool: `True` if agent(s) on `pos`, `False` otherwise.
         """
-        return self.field[*pos, h.GridOffsets.AGENT] > 0
+        return self.field[*pos, GridOffsets.AGENT] > 0
 
-    def contains_multiple_agents(self, pos: h.Position) -> bool:
+    def contains_multiple_agents(self, pos: Position) -> bool:
         """Returns true if the position contains more than one agent, false otherwise.
 
         Args:
-            pos (h.Position): h.Position to be checked.
+            pos (Position): Position to be checked.
 
         Returns:
             bool: `True` if agents on `pos`, `False` otherwise.
         """
-        return self.field[*pos, h.GridOffsets.AGENT] > 1
+        return self.field[*pos, GridOffsets.AGENT] > 1
 
-    def contains_zone(self, pos: h.Position) -> bool:
+    def contains_zone(self, pos: Position) -> bool:
         """Returns true if the position contains a zone, false otherwise.
 
         Args:
-            pos (h.Position): h.Position to be checked.
+            pos (Position): Position to be checked.
 
         Returns:
             bool: `True` if zone on `pos`, `False` otherwise.
         """
-        return self.field[*pos, h.GridOffsets.ZONE]
+        return self.field[*pos, GridOffsets.ZONE]
 
-    def contains_wall(self, pos: h.Position) -> bool:
+    def contains_wall(self, pos: Position) -> bool:
         """Returns true if the position contains a wall, false otherwise.
 
         Args:
-            pos (h.Position): h.Position to be checked.
+            pos (Position): Position to be checked.
 
         Returns:
             bool: `True` if wall on `pos`, `False` otherwise.
         """
-        return not self.field[*pos, h.GridOffsets.NO_WALL]
+        return not self.field[*pos, GridOffsets.NO_WALL]

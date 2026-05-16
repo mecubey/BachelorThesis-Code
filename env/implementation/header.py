@@ -2,7 +2,7 @@
 Provides utility types, functions, constants.
 """
 
-from dataclasses import dataclass
+from dataclasses import dataclass, field
 from enum import IntEnum
 from typing import Any
 import numpy as np
@@ -27,7 +27,15 @@ class Interval:
         """
         return t >= self.start_time and t <= self.end_time
 
-@dataclass(order=True, frozen=False)
+    def contains_interval(self, interval: Interval) -> bool:
+        """
+        True if this interval contains the specified interval,
+        false otherwise.
+        """
+        return (self.start_time <= interval.start_time and
+                interval.end_time <= self.end_time)
+
+@dataclass(order=True, frozen=True)
 class Position:
     """
     Represents a 2D position.
@@ -41,7 +49,7 @@ class Position:
         """
         return np.array([self.x, self.y])
 
-    def length(self) -> float:
+    def length(self) -> int:
         """
         Return Manhattan distance.
         """
@@ -68,6 +76,35 @@ class Position:
     def __hash__(self):
         return hash((self.x, self.y))
 
+@dataclass
+class Config:
+    """Represents a list of positions."""
+    positions: list[Position] = field(default_factory=lambda: [])
+
+    def __getitem__(self, k: int) -> Position:
+        return self.positions[k]
+
+    def __setitem__(self, k: int, coord: Position) -> None:
+        self.positions[k] = coord
+
+    def __len__(self) -> int:
+        return len(self.positions)
+
+    def __iter__(self):
+        return iter(self.positions)
+
+    def __hash__(self) -> int:
+        return hash(tuple(self.positions))
+
+    def append(self, coord: Position) -> None:
+        """
+        Append a new position to this config.
+
+        Args:
+            coord (Position): Position that will be appended.
+        """
+        self.positions.append(coord)
+
 # dtypes
 DTYPE_INT = np.int32
 
@@ -81,6 +118,8 @@ IntArr = np.typing.NDArray[DTYPE_INT]
 FloatArr = np.typing.NDArray[DTYPE_FLOAT]
 
 BoolArr = np.typing.NDArray[DTYPE_BOOL]
+
+Configs = list[Config]
 
 @dataclass
 class EnvParams:
@@ -124,6 +163,8 @@ class Action(IntEnum):
     MOVE_LEFT = 3
     DO_NOTHING = 4
 
+Actions = list[Action]
+
 ACT_TO_DIR: dict[Action, Position] = {Action.MOVE_UP: Position(-1, 0),
                                       Action.MOVE_RIGHT: Position(0, 1),
                                       Action.MOVE_DOWN: Position(1, 0),
@@ -147,7 +188,6 @@ DIR_TO_ACT: dict[Position, Action] = {Position(-1, 0): Action.MOVE_UP,
                                       Position(1, 0): Action.MOVE_DOWN,
                                       Position(0, -1): Action.MOVE_LEFT,
                                       Position(0, 0): Action.DO_NOTHING}
-
 
 DIR_ARR = list(ACT_TO_DIR.values())
 

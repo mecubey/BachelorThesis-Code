@@ -25,8 +25,6 @@ class PathTaskMultiAgentEnv:
         # AGENTS
         self.agent_positions: list[h.Position]
         self.goal_positions: list[h.Position]
-        self.agent_idx = list(range(args.num_agents))
-        self.agent_names = [f"agent_{i}" for i in self.agent_idx]
 
         # RENDERING
         self.figure: Any = None
@@ -70,30 +68,25 @@ class PathTaskMultiAgentEnv:
                               exp_dim=grid_dim,
                               seed=maze_seed)
 
-        num_free_tiles: int = len(free_tiles)
-        free_tiles_mask: h.BoolArr = np.ones(num_free_tiles, dtype=h.DTYPE_BOOL)
-
         # AGENTS
-        # generate all agent positions
-        agent_positions_idx = self.rng.choice(num_free_tiles,
-                                              size=self.args.num_agents,
-                                              replace=False)
+        # generate all agent positions (agents cannot overlap with eachother)
         self.agent_positions = []
-        for i in agent_positions_idx:
-            self.agent_positions.append(h.Position(*free_tiles[i]))
-        free_tiles_mask[agent_positions_idx] = False
+        for pos in self.rng.choice(free_tiles,
+                                   size=self.args.num_agents,
+                                   replace=False):
+            self.agent_positions.append(h.Position(*pos))
 
         # GOALS
-        # generate all goal positions
-        # goals cannot overlap with other goals or agents upon generation
+        # generate all goal positions (goals cannot overlap with eachother)
         self.goal_positions = []
-        for pos in self.rng.choice(free_tiles[free_tiles_mask],
+        for pos in self.rng.choice(free_tiles,
                                    size=self.args.num_agents,
                                    replace=False):
             self.goal_positions.append(h.Position(*pos))
 
         # GRID
         self.grid = Grid(field=field,
+                         max_timestep=self.args.max_timestep,
                          num_agents=self.args.num_agents,
                          agent_positions=self.agent_positions,
                          goal_positions=self.goal_positions)
@@ -112,7 +105,7 @@ class PathTaskMultiAgentEnv:
         if self.args.render_mode == "human":
             self.render_setup()
 
-    def step(self, action_dict: dict[str, h.Action]) -> tuple[bool, bool]:
+    def step(self, actions: list[h.Action]) -> tuple[bool, bool]:
         """
         Step through the enviroment with a given action dictionary.\n
         The action dictionary has the form
@@ -139,18 +132,18 @@ class PathTaskMultiAgentEnv:
         if self.zone.done():
             self.zone.reset()
 
-        for i in self.agent_idx:
-            self.grid.move_agent_in_grid(i, action_dict[self.agent_names[i]])
+        for i in self.grid.agent_idx:
+            self.grid.move_agent_in_grid(i, actions[i])
 
-        for i in self.agent_idx:
+        for i in self.grid.agent_idx:
             # check for collisions
             if self.grid.contains_multiple_agents(self.agent_positions[i]):
-                for j in self.agent_idx:
+                for j in self.grid.agent_idx:
                     if self.agent_positions[i] == self.agent_positions[j]:
                         # reverse action of agent
                         self.grid.move_agent_in_grid(i,
                                                      h.ACT_TO_OPPOSITE_ACT
-                                                     [action_dict[self.agent_names[j]]])
+                                                     [actions[j]])
             # check for goal completion status
             if self.grid.is_agent_on_goal(i):
                 num_agents_on_goal += 1

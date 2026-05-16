@@ -3,18 +3,18 @@ Contains the actual enviroment creation method with specified parameters.
 """
 
 from implementation import header as h
-from implementation.planner.prioritized_planner import PrioritizedPlanner
 from implementation.path_task_env import PathTaskMultiAgentEnv
+from implementation.pibt_plus.pibt_plus import PIBTPLUS
 
 params = h.EnvParams(
-    num_agents=10,
-    maze_intensity=0,
-    spawn_prob=1,
-    spread_prob=1,
-    max_num_spread=5,
+    num_agents=13,
+    maze_intensity=1,
+    spawn_prob=0,
+    spread_prob=0.3,
+    max_num_spread=20,
     dir_spread_probs=[0.6, 0.7, 0.55, 0.8],
-    max_timestep=150,
-    field_dim=10,
+    max_timestep=200,
+    field_dim=8,
     render_mode="human"
 )
 
@@ -34,20 +34,18 @@ def main():
 
     try:
         for _ in range(num_episodes):
-            env.reset(env_seed=1,
-                      maze_seed=1,
-                      zone_seed=1)
+            env.reset(env_seed=3,
+                      maze_seed=6,
+                      zone_seed=10)
 
-            planner = PrioritizedPlanner(env.grid,
-                                         env.args.max_timestep,
-                                         seed=1)
+            planner = PIBTPLUS(env.grid, pibt_seed=0, lacam_seed=0)
 
-            planner.initial_plan()
             input()
 
             done = False
             while not done:
-                actions_dict = planner.get_actions_at(env.timestep)
+                print(planner.t_min-env.timestep)
+                actions_dict = planner.step(env.timestep)
                 termination, truncation = env.step(actions_dict)
                 done = termination or truncation
                 input()
