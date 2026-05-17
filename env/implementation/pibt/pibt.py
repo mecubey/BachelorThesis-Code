@@ -3,7 +3,8 @@
 from .dist_table import DistTable
 import numpy as np
 from ..grid import Grid
-from ..header import Position, DIR_TO_ACT, Action
+from ..header import Position, DIR_TO_ACT, Action, BETA
+from ..zone import Zone
 
 class PIBT:
     """
@@ -47,14 +48,18 @@ class PIBT:
 
     def __init__(self,
                  grid: Grid,
+                 zone: Zone,
                  seed: int = 0) -> None:
-        """Initialize PIBT solver.
+        """
+        Initialize PIBT solver.
 
         Args:
             grid: Grid object which represents map.
+            zone: Zone of map.
             seed: Random seed for tie-breaking (default: 0).
         """
         self.grid = grid
+        self.zone = zone
 
         # distance tables
         self.dist_tables = [DistTable(grid, goal) for goal in grid.goal_positions]
@@ -99,7 +104,8 @@ class PIBT:
         # get candidate next vertices
         c = [q_from[i]] + self.grid.get_neighbours_at(q_from[i])
         self.rng.shuffle(c)  # tie-breaking, randomize
-        c = sorted(c, key= lambda x: self.dist_tables[i].get(x))
+        c = sorted(c, key= lambda x: BETA * self.dist_tables[i].get(x) +
+                                     (1-BETA) * self.zone.get_hazard_dmg(x))
 
         # vertex assignment
         for v in c:

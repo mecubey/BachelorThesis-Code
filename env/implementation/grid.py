@@ -8,6 +8,7 @@ from .header import (Position,
                      ACT_TO_DIR,
                      GridOffsets,
                      DIR_ARR)
+from typing import Callable
 
 class Grid:
     """
@@ -17,12 +18,15 @@ class Grid:
                  field: IntArr,
                  max_timestep: int,
                  num_agents: int,
+                 get_current_timestep: Callable[[], int],
                  agent_positions: list[Position],
                  goal_positions: list[Position]) -> None:
         # each cell contains [is_no_wall, is_zone, is_agent]
         self.field = field
         self.max_timestep = max_timestep
         self.num_agents = num_agents
+        self.get_episode_progress: Callable[[], float] = lambda: (get_current_timestep() /
+                                                                  max_timestep)
         self.agent_idx = list(range(num_agents))
         self.agent_positions: list[Position] = agent_positions
         self.goal_positions: list[Position] = goal_positions

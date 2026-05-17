@@ -4,7 +4,6 @@ Provides utility types, functions, constants.
 
 from dataclasses import dataclass
 from enum import IntEnum
-from typing import Any
 import numpy as np
 
 # classes
@@ -74,12 +73,24 @@ class EnvParams:
     spread_prob: float
     max_num_spread: int
     dir_spread_probs: list[float]
+    hazard_dmg_type: HazardDamageType
     max_timestep: int
     field_dim: int
     render_mode: str|None
 
-# constants
-INVALID_POSITION = Position(-1, -1)
+# constants & enums
+HAZARD_DMG = 5.0
+
+BETA = 0.5
+
+class HazardDamageType(IntEnum):
+    """
+    Describes all posible hazard damage formulations.
+    """
+    CONSTANT = 0
+    CONSTANT_WITH_DECAY = 1
+    DISTANCE = 2
+    DISTANCE_WITH_DECAY = 3
 
 ORIGIN = -1
 
@@ -93,8 +104,6 @@ class GridOffsets(IntEnum):
     ZONE = 1
     AGENT = 2
 
-NUM_ACTIONS = 5
-
 class Action(IntEnum):
     """
     Describes each possible action.
@@ -104,8 +113,6 @@ class Action(IntEnum):
     MOVE_DOWN = 2
     MOVE_LEFT = 3
     DO_NOTHING = 4
-
-Actions = list[Action]
 
 ACT_TO_DIR: dict[Action, Position] = {Action.MOVE_UP: Position(-1, 0),
                                       Action.MOVE_RIGHT: Position(0, 1),
@@ -136,23 +143,3 @@ DIR_ARR = list(ACT_TO_DIR.values())
 ACTS_ARR = list(ACT_TO_DIR.keys())
 
 ACTS_ARR_AS_NDARRAY = np.array(ACTS_ARR, dtype=DTYPE_INT)
-
-# methods
-def randomly(l: list[Any], rng: np.random.Generator) -> list[Any]:
-    """
-    Shuffle int list and return it.
-    """
-    rng.shuffle(l)
-    return l
-
-def replace_item_with_multiple(arr: list[Any], elem: Any, new_elems: list[Any]):
-    """
-    Given a list, an element and multiple new values,
-    replaces the element in the list with multiple new values.
-    """
-    for item in arr:
-        if item == elem:
-            for new_item in new_elems:
-                yield new_item
-        else:
-            yield item

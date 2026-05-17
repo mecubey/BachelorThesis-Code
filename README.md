@@ -12,7 +12,7 @@ For the implementation, see
 env/implementation/path_task_env.py
 ```
 
-To use the enviroment, configure and import
+To use the enviroment, import
 ```
 env/path_task_env_v0.py
 ```

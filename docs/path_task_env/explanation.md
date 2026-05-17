@@ -2,7 +2,7 @@
 
 ## Overview
 
-`PathTaskMutliAgentEnv` is a multi-agent gridworld enviroment. Multiple agents operate in a shared environment and must coordinate implicitly so that each one of them arrives at their destination.
+`PathTaskMutliAgentEnv` is a multi-agent gridworld enviroment. Multiple agents operate in a shared environment and must coordinate implicitly so that each one of them arrives at their destination at the same time.
 
 ---
 
@@ -45,8 +45,27 @@ A dynamic hazard with the following behavior:
 - After a set amount of timesteps, the zone disappears.
 - Only one zone can be active at a time.
 
-#### Zone Damage Formulations
-[INSERT HERE]
+#### Hazard Damage Formulations
+$\lambda$ - hazard damage
+
+Hazard damage itself is expressed as increased cost to travel to a vertex $v$.
+
+Additionally, to encourage agents to finish episodes, an additional factor 
+
+$episode\_progress = \frac{current\_timestep}{max\_timestep}$
+
+can be introduced to decrease hazard damage the farther along agents are in an episode. This makes it so agents are encouraged to keep staying on their goals.
+##### Constant
+$\lambda$ if agent is on a hazard tile, otherwise `0`.
+
+##### Distance
+$max(0, \lambda - \alpha * d(v, c))$
+
+Based on linear distance decay, the damage gradually decreases the farther away an agent is from the zone center $c$.
+
+$\alpha$ controls how much damage dissappears per tile of distance.
+
+$\alpha = \frac{\lambda}{0.1 * map\_width}$
 
 ---
 
@@ -56,12 +75,6 @@ A dynamic hazard with the following behavior:
 
 Each agent has:
 - Position in the grid `(x, y)`
-- Goal position `(x, y)`
-
-Agents are named:
-```
-agent_0, ..., agent_{n-1}
-```
 
 ### Movement
 

@@ -88,6 +88,7 @@ class PathTaskMultiAgentEnv:
         self.grid = Grid(field=field,
                          max_timestep=self.args.max_timestep,
                          num_agents=self.args.num_agents,
+                         get_current_timestep=lambda: self.timestep,
                          agent_positions=self.agent_positions,
                          goal_positions=self.goal_positions)
 
@@ -96,6 +97,7 @@ class PathTaskMultiAgentEnv:
                          free_tiles=free_tiles,
                          dir_spread_probs=self.args.dir_spread_probs,
                          max_num_spread=self.args.max_num_spread,
+                         dmg_type=self.args.hazard_dmg_type,
                          seed=zone_seed)
 
         # set agents in grid
