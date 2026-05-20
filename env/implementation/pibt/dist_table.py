@@ -2,6 +2,12 @@
 Contains implementation of a lazy BFS distance table.
 
 Used in PIBT.
+
+The implementation was taken from
+
+https://github.com/Kei18/pypibt
+
+and adjusted to my use case.
 """
 
 from collections import deque

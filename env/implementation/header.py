@@ -67,6 +67,8 @@ class EnvParams:
     """
     Holds necessary parameters for the PathTaskEnv.
     """
+    consider_hazards: bool
+    with_decay: bool
     num_agents: int
     maze_intensity: float
     spawn_prob: float
@@ -88,9 +90,7 @@ class HazardDamageType(IntEnum):
     Describes all posible hazard damage formulations.
     """
     CONSTANT = 0
-    CONSTANT_WITH_DECAY = 1
-    DISTANCE = 2
-    DISTANCE_WITH_DECAY = 3
+    DISTANCE = 1
 
 ORIGIN = -1
 

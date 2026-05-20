@@ -22,6 +22,7 @@ class Zone():
                  free_tiles: IntArr,
                  dir_spread_probs: list[float],
                  max_num_spread: int,
+                 consider_hazards: bool,
                  dmg_type: HazardDamageType,
                  seed: int|None = None) -> None:
         self.grid = grid
@@ -29,6 +30,7 @@ class Zone():
         self.num_free_tiles = len(free_tiles)
         self.dir_spread_probs = dir_spread_probs
         self.max_num_spread = max_num_spread
+        self.consider_hazards = consider_hazards
         self.dmg_type = dmg_type
         self.rng = np.random.default_rng(seed)
         self.spread_progress = 0
@@ -108,22 +110,19 @@ class Zone():
 
     def get_hazard_dmg(self, pos: Position) -> float:
         """
-        Calculates the hazard damage for a given position and
-        damage type.
+        Calculates the hazard damage for a given position.
         """
-        # zone has not spawned yet
-        if self.zone_center is None:
+        if (not self.consider_hazards or
+            self.zone_center is None or
+            not self.grid.contains_zone(pos)):
             return 0
 
         # lambda = maximum damage at center (same everywhere for constant)
-        episode_progress = self.grid.get_episode_progress()
 
         match(self.dmg_type):
             case HazardDamageType.CONSTANT:
                 # constant: lambda if hazardous, 0 otherwise
-                return self.grid.contains_zone(pos) * HAZARD_DMG
-            case HazardDamageType.CONSTANT_WITH_DECAY:
-                return self.grid.contains_zone(pos) * HAZARD_DMG * episode_progress
+                return HAZARD_DMG
             case HazardDamageType.DISTANCE:
                 # alpha ~ lambda / R
                 # R ~ 0.1 * map_width
@@ -133,9 +132,5 @@ class Zone():
                 # calculate linear disance decay
                 # distance: max(0, lambda - alpha * distance_to_hazard_center)
                 return max(0, HAZARD_DMG - alpha * (self.zone_center-pos).length())
-            case HazardDamageType.DISTANCE_WITH_DECAY:
-                alpha = HAZARD_DMG / (0.1 * self.grid.dim)
-                return (max(0, HAZARD_DMG - alpha * (self.zone_center-pos).length())
-                        * episode_progress)
 
         raise ValueError("There are only two damage types!")

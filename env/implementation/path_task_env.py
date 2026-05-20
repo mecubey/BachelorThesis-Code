@@ -9,6 +9,8 @@ from .maze import gen_maze
 from . import header as h
 import matplotlib.pyplot as plt
 from .grid import Grid
+from .logger import Logger
+from .pibt.dist_table import DistTable
 
 class PathTaskMultiAgentEnv:
     """
@@ -39,6 +41,8 @@ class PathTaskMultiAgentEnv:
 
         # GRID
         self.grid: Grid
+
+        self.logger: Logger
 
     def reset(self, *,
               env_seed: int|None = None,
@@ -98,11 +102,22 @@ class PathTaskMultiAgentEnv:
                          dir_spread_probs=self.args.dir_spread_probs,
                          max_num_spread=self.args.max_num_spread,
                          dmg_type=self.args.hazard_dmg_type,
+                         consider_hazards=self.args.consider_hazards,
                          seed=zone_seed)
 
         # set agents in grid
         for i in range(self.args.num_agents):
             self.grid.set_agent_in_grid(self.agent_positions[i], True)
+
+        self.logger = Logger()
+
+        # set shortest paths
+        # too ugly to connect with PIBT itself, so we will just
+        # use the dist tables (inefficient but meh)
+        for i in self.grid.agent_idx:
+            dist_table = DistTable(self.grid, self.grid.goal_positions[i])
+            self.logger.record_shortest_path_cost(agent_i=i,
+                                                  distance=dist_table.get(self.agent_positions[i]))
 
         if self.args.render_mode == "human":
             self.render_setup()
@@ -137,29 +152,42 @@ class PathTaskMultiAgentEnv:
         for i in self.grid.agent_idx:
             self.grid.move_agent_in_grid(i, actions[i])
 
-        for i in self.grid.agent_idx:
-            # check for collisions
-            if self.grid.contains_multiple_agents(self.agent_positions[i]):
-                for j in self.grid.agent_idx:
-                    if self.agent_positions[i] == self.agent_positions[j]:
-                        # reverse action of agent
-                        self.grid.move_agent_in_grid(i,
-                                                     h.ACT_TO_OPPOSITE_ACT
-                                                     [actions[j]])
-            # check for goal completion status
             if self.grid.is_agent_on_goal(i):
                 num_agents_on_goal += 1
 
+            self.logger.record_hzd_dmg(agent_i=i,
+                                       hazard_dmg=self.zone.get_hazard_dmg(self.agent_positions[i]))
+
+            self.logger.record_last_move_cost(agent_i=i,
+                                              last_move_cost=
+                                              1+self.zone.get_hazard_dmg(self.agent_positions[i]))
+
+        # uncomment this for collision checking
+        # since PIBT is collision-free, no need for collision checking
+        #for i in self.grid.agent_idx:
+        #    # check for collisions
+        #    if self.grid.contains_multiple_agents(self.agent_positions[i]):
+        #        for j in self.grid.agent_idx:
+        #            if self.agent_positions[i] == self.agent_positions[j]:
+        #                # reverse action of agent
+        #                self.grid.move_agent_in_grid(i,
+        #                                             h.ACT_TO_OPPOSITE_ACT
+        #                                             [actions[j]])
+
+        if self.args.render_mode == "human":
+            self.render()
+
         truncated = False
-        if self.timestep == self.args.max_timestep:
+        if self.timestep == self.args.max_timestep-1:
+            self.logger.record_episode_end(fin=0)
+            self.logger.record_makespan(makespan=-1)
             truncated = True
 
         terminated = False
         if num_agents_on_goal == self.args.num_agents:
+            self.logger.record_episode_end(fin=1)
+            self.logger.record_makespan(makespan=self.timestep)
             terminated = True
-
-        if self.args.render_mode == "human":
-            self.render()
 
         self.timestep += 1
 

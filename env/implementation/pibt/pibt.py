@@ -1,4 +1,12 @@
-"""Priority Inheritance with Backtracking (PIBT) algorithm for MAPF."""
+"""
+Priority Inheritance with Backtracking (PIBT) algorithm for MAPF.
+
+The implementation was taken from
+
+https://github.com/Kei18/pypibt
+
+and adjusted to my use case.
+"""
 
 from .dist_table import DistTable
 import numpy as np
@@ -28,8 +36,8 @@ class PIBT:
     Attributes:
         grid: Grid object representing the map.
         dist_tables: Distance tables for each agent to their goal.
-        NIL: Sentinel value representing unassigned agent.
-        NIL_COORD: Sentinel value representing unassigned coordinate.
+        nil: Sentinel value representing unassigned agent.
+        nil_coord: Sentinel value representing unassigned coordinate.
         occupied_now: Current occupation status of each grid cell.
         occupied_nxt: Next timestep occupation status of each grid cell.
         rng: Random number generator for tie-breaking.
@@ -49,6 +57,7 @@ class PIBT:
     def __init__(self,
                  grid: Grid,
                  zone: Zone,
+                 with_decay: bool,
                  seed: int = 0) -> None:
         """
         Initialize PIBT solver.
@@ -60,6 +69,7 @@ class PIBT:
         """
         self.grid = grid
         self.zone = zone
+        self.with_decay = with_decay
 
         # distance tables
         self.dist_tables = [DistTable(grid, goal) for goal in grid.goal_positions]
@@ -81,6 +91,20 @@ class PIBT:
 
         # used for tie-breaking
         self.rng = np.random.default_rng(seed)
+
+    def get_vertex_priorities(self, i: int, v: Position) -> float:
+        """
+        Get the priority for the specified vertex (position).
+
+        Args:
+            i (int): Agent index.
+            v (Position): Vertex.
+
+        Returns:
+            float: Priority value.
+        """
+        return (BETA * self.dist_tables[i].get(v) + (1-BETA) * self.zone.get_hazard_dmg(v)
+                * (max(0, 1-self.grid.get_episode_progress()) if self.with_decay else 1))
 
     def func_pibt(self, q_from: list[Position], q_to: list[Position], i: int) -> bool:
         """
@@ -104,8 +128,7 @@ class PIBT:
         # get candidate next vertices
         c = [q_from[i]] + self.grid.get_neighbours_at(q_from[i])
         self.rng.shuffle(c)  # tie-breaking, randomize
-        c = sorted(c, key= lambda x: BETA * self.dist_tables[i].get(x) +
-                                     (1-BETA) * self.zone.get_hazard_dmg(x))
+        c = sorted(c, key= lambda x: self.get_vertex_priorities(i, x))
 
         # vertex assignment
         for v in c:
