@@ -22,7 +22,6 @@ class Zone():
                  free_tiles: IntArr,
                  dir_spread_probs: list[float],
                  max_num_spread: int,
-                 consider_hazards: bool,
                  dmg_type: HazardDamageType,
                  seed: int|None = None) -> None:
         self.grid = grid
@@ -30,7 +29,6 @@ class Zone():
         self.num_free_tiles = len(free_tiles)
         self.dir_spread_probs = dir_spread_probs
         self.max_num_spread = max_num_spread
-        self.consider_hazards = consider_hazards
         self.dmg_type = dmg_type
         self.rng = np.random.default_rng(seed)
         self.spread_progress = 0
@@ -112,8 +110,7 @@ class Zone():
         """
         Calculates the hazard damage for a given position.
         """
-        if (not self.consider_hazards or
-            self.zone_center is None or
+        if (self.zone_center is None or
             not self.grid.contains_zone(pos)):
             return 0
 

@@ -5,35 +5,49 @@ Utility methods, constants, etc. for experiments.
 import sys
 sys.path.insert(0, '')
 
-import statistics as st
+from enum import Enum
 from env.implementation.pibt.pibt import PIBT
 from env.path_task_env_v0 import raw_env
-from env.implementation.header import EnvParams, HazardDamageType
+from env.implementation.header import (EnvParams,
+                                       HazardDamageType,
+                                       Statistic)
 
-seeds = list(range(10))
-NUM_EPISODES = 1000
+NUM_VALUES = 10
 
 default_params = EnvParams(consider_hazards=True,
-                           with_decay=True,
+                           with_decay=False,
                            hazard_dmg_type=HazardDamageType.CONSTANT,
-                           num_agents=30,
-                           field_dim=8,
+                           num_agents=200,
+                           field_dim=16,
                            maze_intensity=0.2,
-                           spawn_prob=0.4,
-                           spread_prob=0.6,
-                           max_num_spread=20,
-                           dir_spread_probs=[0.7, 0.7, 0.7, 0.7],
-                           max_timestep=100,
+                           spawn_prob=0.7,
+                           spread_prob=0.4,
+                           max_num_spread=10,
+                           dir_spread_probs=[0.8, 0.8, 0.8, 0.8],
+                           max_timestep=150,
                            render_mode=None)
 
-def get_statistics(params: EnvParams,
-                   episode_seeds: list[int]) -> tuple[float,
-                                                      float,
-                                                      float,
-                                                      float]:
+class PlannerType(Enum):
     """
-    For a given set of seeds and enviroment parameters,
-    calculate the average SOC, accumlated hazard damage,
+    Specifies planner type.
+    """
+    HAZARD_AWARE = 1
+    HAZARD_UNAWARE = 2
+
+class HazardParameter(Enum):
+    """
+    Specifies varying parameter.
+    """
+    SPAWN_PROB = 1
+    SPREAD_PROB = 2
+    DIR_SPREAD_PROB = 3
+
+LABELS = ["HA", "NHA"]
+
+def run_experiment(params: EnvParams, seed: int) -> Statistic:
+    """
+    For a given seed and enviroment parameters,
+    calculate the SOC, accumulated hazard damage,
     success rate, makespan.
 
     Args:
@@ -41,50 +55,64 @@ def get_statistics(params: EnvParams,
         episode_seeds (list[int]): Set of seeds.
 
     Returns:
-        tuple[float, float, float, float]:
-        Average accumulated hazard damage,
-        average normalized SOC,
+        Statistic:
+        Total hazard damage,
+        SoC,
         success rate,
-        average makespawns (averaged over sucessfull episodes).
+        makespan (np.nan if unsuccesfull).
     """
-    episode_hazard_dmgs: list[float] = []
-    episode_finishes: list[int] = []
-    episode_sum_of_costs: list[float] = []
-    episode_makespans: list[float] = []
     env = raw_env(params)
-    for seed in episode_seeds:
-        env.reset(env_seed=seed,
-                  maze_seed=seed,
-                  zone_seed=seed)
+    env.reset(env_seed=seed,
+              maze_seed=seed,
+              zone_seed=seed)
 
-        planner = PIBT(env.grid,
-                       env.zone,
-                       env.args.with_decay,
-                       seed=seed)
+    planner = PIBT(grid=env.grid,
+                   zone=env.zone,
+                   with_decay=env.args.with_decay,
+                   consider_hazards=env.args.consider_hazards,
+                   seed=seed)
 
-        done = False
-        while not done:
-            actions_dict = planner.step()
-            termination, truncation = env.step(actions_dict)
-            done = termination or truncation
+    done = False
+    while not done:
+        actions_dict = planner.step()
+        termination, truncation = env.step(actions_dict)
+        done = termination or truncation
 
-        normalized_costs: list[float] = []
-        hazard_dmgs: list[float] = []
-        shortest_paths_lenghts: list[float] = list(env.logger.shortest_path_lengths_buffer.values())
-        shortest_paths_sum: float = sum(shortest_paths_lenghts)
-        longest_shortest_path: float = max(shortest_paths_lenghts)
-        for agent in env.grid.agent_idx:
-            normalized_costs.append(sum(env.logger.cost_of_paths_buffer[agent])/
-                                    shortest_paths_sum)
-            hazard_dmgs.append(sum(env.logger.hazard_dmg_buffer[agent])/
-                               longest_shortest_path)
-        episode_hazard_dmgs.append(st.mean(hazard_dmgs))
-        episode_sum_of_costs.append(st.mean(normalized_costs))
-        episode_finishes.append(env.logger.episode_finish)
-        if env.logger.makespan != -1:
-            episode_makespans.append(env.logger.makespan/longest_shortest_path)
-    if not episode_makespans:
-        return (st.mean(episode_hazard_dmgs), st.mean(episode_sum_of_costs),
-                st.mean(episode_finishes), -1.0)
-    return (st.mean(episode_hazard_dmgs), st.mean(episode_sum_of_costs),
-            st.mean(episode_finishes), st.mean(episode_makespans))
+    return env.logger.get_statistics()
+
+def plot_data(*,
+              ax,
+              xpoints: list[float],
+              ha_ypoints: list[float],
+              max_ha_ypoints: list[float],
+              min_ha_ypoints: list[float],
+              nha_ypoints: list[float],
+              max_nha_ypoints: list[float],
+              min_nha_ypoints: list[float],
+              x_axis_title: str,
+              y_axis_title: str,
+              x_limits: list[int],
+              y_limits: list[int]):
+    """
+    Plot given data.
+    Always produces a graph for hazard aware and
+    not hazard aware planner.
+    """
+    ax.plot(xpoints, ha_ypoints, label=LABELS[0])
+    ax.fill_between(xpoints,
+                    min_ha_ypoints,
+                    max_ha_ypoints,
+                    color="blue",
+                    alpha=0.2)
+    ax.plot(xpoints, nha_ypoints, label=LABELS[1])
+    ax.fill_between(xpoints,
+                    min_nha_ypoints,
+                    max_nha_ypoints,
+                    color="orange",
+                    alpha=0.2)
+    ax.set_xlabel(x_axis_title)
+    ax.set_ylabel(y_axis_title)
+    ax.set_xlim([x_limits[0], x_limits[-1]])
+    ax.set_ylim([y_limits[0], y_limits[-1]])
+    ax.set_xticks(x_limits)
+    ax.set_yticks(y_limits)

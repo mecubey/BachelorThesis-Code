@@ -16,16 +16,18 @@ For each experiment, 30 set seeds were used to generate the corresponding enviro
 ## Baseline Configuration
 Every experiment will vary at most one independent variable. The base configuration was chosen based on empirical observations - they do not make the enviroment trivially easy nor impossibly difficult. If otherwise specified, these values will be used:
 
-- `consider_hazards=yes`
-- `hazard_dmg_type=CONSTANT`
-- `num_agents=300`
+- `consider_hazards=True`
+- `with_decay=False`
+- `hazard_dmg_type=HazardDamageType.CONSTANT`
+- `num_agents=200`
 - `field_dim=16`
 - `maze_intensity=0.2`
-- `spawn_prob=0.4`
-- `spread_prob=0.6`
-- `max_num_spread=20`
-- `dir_spread_probs=[0.7,0.7,0.7,0.7]`
-- `max_timestep=300`
+- `spawn_prob=0.7`
+- `spread_prob=0.4`
+- `max_num_spread=10`
+- `dir_spread_probs=[0.8, 0.8, 0.8, 0.8]`
+- `max_timestep=150`
+- `render_mode=None`
 
 ## Independent Variables to Vary
 Each experiment will be done on each damage type for each hazard consideration.
@@ -36,19 +38,24 @@ Each experiment will be done on each damage type for each hazard consideration.
 - `dir_spread_probs`
 
 ## Dependent Variables
-### Hazard
-- Maximum accumulated hazard damage taken
-- Minimum accumulated hazard damage taken
-- Average accumulated hazard damage taken
+Makespan is calculated only over the successfull episodes.
 
-### Makespan
-- Minimum amount of timesteps to finish episode
-- Maximum amount of timesteps to finish episode
-- Average amount of timesteps to finish episode
+Every other metric uses all episodes.
 
-### Solution Quality
-- Sum-Of-Costs divided by the sum over each agent's initial shortest distance to their goal
-- Makespan divided by the sum over each agent's initial shortest distance to their goal
+### Total Hazard Damage
+- Maximum
+- Minimum
+- Average
+
+### Solution Quality Divided by Sum(dist(s_i, g_i))
+- Maximum
+- Minimum
+- Average
+
+### Makespan Divided by max(dist(s_i, g_i))
+- Maximum
+- Minimum
+- Average
 
 ### Success Rate
-- How many of the 30 seeds were actually sucessfully completed?
+- How many episodes were successfully completed? (as percentage)

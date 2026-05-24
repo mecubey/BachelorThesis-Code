@@ -54,9 +54,10 @@ class PIBT:
         multi-agent pathfinding. See https://kei18.github.io/lacam-project/
     """
 
-    def __init__(self,
+    def __init__(self, *,
                  grid: Grid,
                  zone: Zone,
+                 consider_hazards: bool,
                  with_decay: bool,
                  seed: int = 0) -> None:
         """
@@ -69,6 +70,7 @@ class PIBT:
         """
         self.grid = grid
         self.zone = zone
+        self.consider_hazards = consider_hazards
         self.with_decay = with_decay
 
         # distance tables
@@ -104,7 +106,8 @@ class PIBT:
             float: Priority value.
         """
         return (BETA * self.dist_tables[i].get(v) + (1-BETA) * self.zone.get_hazard_dmg(v)
-                * (max(0, 1-self.grid.get_episode_progress()) if self.with_decay else 1))
+                * (max(0, 1-self.grid.get_episode_progress()) if self.with_decay else 1)
+                * self.consider_hazards)
 
     def func_pibt(self, q_from: list[Position], q_to: list[Position], i: int) -> bool:
         """

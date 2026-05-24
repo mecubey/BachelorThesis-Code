@@ -2,74 +2,58 @@
 Logger utility class to collect data for experiments.
 """
 
-from collections import defaultdict
+from .header import Statistic
+import numpy as np
 
 class Logger:
     """
     Logger utility class to collect experiment data.
     """
     def __init__(self) -> None:
-        self.hazard_dmg_buffer: dict[int, list[float]] = defaultdict(list)
-        self.cost_of_paths_buffer: dict[int, list[float]] = defaultdict(list)
-        self.episode_finish: int = 0
-        self.makespan: int = 0
-        self.shortest_path_lengths_buffer: dict[int, float] = defaultdict(int)
+        self.total_hzd_dmg: float = 0
+        self.soc: float = 0
+        self.did_finish: float = 0
+        self.makespan: float = 0
 
-    def record_episode_end(self, *, fin: int) -> None:
+    def get_statistics(self) -> Statistic:
+        """
+        Get total hazard dmg, SOC, makespan and
+        finish status from this episode.
+        """
+        return Statistic(hazard_dmg=self.total_hzd_dmg,
+                         soc=self.soc,
+                         makespan=np.nan if not self.did_finish else self.makespan,
+                         fin=self.did_finish)
+
+    def reset(self) -> None:
+        """
+        Reset logger values.
+        """
+        self.total_hzd_dmg = 0
+        self.soc = 0
+        self.did_finish = 0
+        self.makespan = 0
+
+    def record_episode_end(self, fin: float) -> None:
         """
         Record whether or not the episode has finished.
-
-        Args:
-            episode_i (int): Current episode.
-            fin (int): Flag for episode finish.
         """
-        self.episode_finish = fin
+        self.did_finish = fin
 
-    def record_makespan(self, *, makespan: int) -> None:
+    def record_makespan(self, makespan: float) -> None:
         """
         Record makespawn. -1 if episode did not finish.
-
-        Args:
-            episode_i (int): Current episode.
-            makespan (int): Makespawn of episode.
         """
         self.makespan = makespan
 
-    def record_shortest_path_cost(self, *,
-                                  agent_i: int,
-                                  distance: float) -> None:
+    def record_last_move_cost(self, last_move_cost: float):
         """
-        Record the shortest path cost of the specified agent.
+        Add the cost of the last move to the SOC.
+        """
+        self.soc += last_move_cost
 
-        Args:
-            episode_i (int): Current episode.
-            agent_i (int): Current agent,
-            distance (int): Length of shortest path from initial agent position to agent's goal.
+    def record_hzd_dmg(self, hazard_dmg: float) -> None:
         """
-        self.shortest_path_lengths_buffer[agent_i] = distance
-
-    def record_last_move_cost(self, *,
-                              agent_i: int,
-                              last_move_cost: float):
+        Add hazard damage to the total hazard damage.
         """
-        Record cost of an agent's last move.
-
-        Args:
-            episode_i (int): Current episode.
-            agent_i (int): Current agent.
-            last_move_cost (float): Cost of the last move taken.
-        """
-        self.cost_of_paths_buffer[agent_i].append(last_move_cost)
-
-    def record_hzd_dmg(self, *,
-                       agent_i: int,
-                       hazard_dmg: float) -> None:
-        """
-        Record an agent's taken hazard damage.
-
-        Args:
-            episode_i (int): Current episode.
-            agent_i (int): Current agent.
-            hazard_dmg (float): Hazard damage taken in this step.
-        """
-        self.hazard_dmg_buffer[agent_i].append(hazard_dmg)
+        self.total_hzd_dmg += hazard_dmg

@@ -42,7 +42,10 @@ class PathTaskMultiAgentEnv:
         # GRID
         self.grid: Grid
 
-        self.logger: Logger
+        # DATA LOGGING
+        self.logger: Logger = Logger()
+        self.shortest_path_sum: float = 0
+        self.longest_shortest_path: float = 0
 
     def reset(self, *,
               env_seed: int|None = None,
@@ -102,22 +105,24 @@ class PathTaskMultiAgentEnv:
                          dir_spread_probs=self.args.dir_spread_probs,
                          max_num_spread=self.args.max_num_spread,
                          dmg_type=self.args.hazard_dmg_type,
-                         consider_hazards=self.args.consider_hazards,
                          seed=zone_seed)
 
         # set agents in grid
         for i in range(self.args.num_agents):
             self.grid.set_agent_in_grid(self.agent_positions[i], True)
 
-        self.logger = Logger()
-
-        # set shortest paths
+        # LOGGING
+        self.logger.reset()
+        self.shortest_path_sum = 0
+        self.longest_shortest_path = -1
+        # calculate the sum of all the shortest paths lengths
         # too ugly to connect with PIBT itself, so we will just
         # use the dist tables (inefficient but meh)
         for i in self.grid.agent_idx:
             dist_table = DistTable(self.grid, self.grid.goal_positions[i])
-            self.logger.record_shortest_path_cost(agent_i=i,
-                                                  distance=dist_table.get(self.agent_positions[i]))
+            distance = dist_table.get(self.agent_positions[i])
+            self.longest_shortest_path = max(distance, self.longest_shortest_path)
+            self.shortest_path_sum += distance
 
         if self.args.render_mode == "human":
             self.render_setup()
@@ -155,12 +160,13 @@ class PathTaskMultiAgentEnv:
             if self.grid.is_agent_on_goal(i):
                 num_agents_on_goal += 1
 
-            self.logger.record_hzd_dmg(agent_i=i,
-                                       hazard_dmg=self.zone.get_hazard_dmg(self.agent_positions[i]))
+            self.logger.record_hzd_dmg(self.zone.get_hazard_dmg(self.agent_positions[i])/
+                                       self.shortest_path_sum)
 
-            self.logger.record_last_move_cost(agent_i=i,
-                                              last_move_cost=
-                                              1+self.zone.get_hazard_dmg(self.agent_positions[i]))
+            self.logger.record_last_move_cost((1+self.zone.get_hazard_dmg(self.agent_positions[i]))/
+                                              self.shortest_path_sum)
+
+        self.timestep += 1
 
         # uncomment this for collision checking
         # since PIBT is collision-free, no need for collision checking
@@ -178,18 +184,20 @@ class PathTaskMultiAgentEnv:
             self.render()
 
         truncated = False
-        if self.timestep == self.args.max_timestep-1:
-            self.logger.record_episode_end(fin=0)
-            self.logger.record_makespan(makespan=-1)
-            truncated = True
-
         terminated = False
+
         if num_agents_on_goal == self.args.num_agents:
             self.logger.record_episode_end(fin=1)
-            self.logger.record_makespan(makespan=self.timestep)
+            self.logger.record_makespan(makespan=self.timestep/self.longest_shortest_path)
             terminated = True
+            return terminated, truncated
 
-        self.timestep += 1
+        if self.timestep == self.args.max_timestep:
+            self.logger.record_episode_end(fin=0)
+            self.logger.record_makespan(makespan=np.nan)
+            self.logger.soc = np.nan
+            self.logger.total_hzd_dmg = np.nan
+            truncated = True
 
         return terminated, truncated
 

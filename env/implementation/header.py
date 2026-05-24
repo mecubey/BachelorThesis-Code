@@ -80,8 +80,16 @@ class EnvParams:
     field_dim: int
     render_mode: str|None
 
+@dataclass
+class Statistic:
+    """Holds data recorded from a single run."""
+    hazard_dmg: float
+    soc: float
+    makespan: float
+    fin: float
+
 # constants & enums
-HAZARD_DMG = 5.0
+HAZARD_DMG = 10.0
 
 BETA = 0.5
 
