@@ -148,8 +148,7 @@ class PathTaskMultiAgentEnv:
             self.logger.record_hzd_dmg(self.zone.get_hazard_dmg(self.agent_positions[i])/
                                        self.shortest_path_sum)
 
-            self.logger.record_last_move_cost((1+self.zone.get_hazard_dmg(self.agent_positions[i]))/
-                                              self.shortest_path_sum)
+            self.logger.record_soc(1/self.shortest_path_sum)
 
         self.timestep += 1
 
@@ -225,14 +224,15 @@ class PathTaskMultiAgentEnv:
         goal_pos_as_ndarray = np.array([pos.as_ndarray() for pos in self.goal_positions])
         agent_pos_as_ndarray = np.array([pos.as_ndarray() for pos in self.agent_positions])
 
-        self.goal_scat = self.ax.scatter(goal_pos_as_ndarray[:, 1],
-                                         goal_pos_as_ndarray[:, 0],
-                                         c=self.colors, marker="P", edgecolors="black",
-                                         s=3500 / self.grid.dim)
-        self.agent_scat = self.ax.scatter(agent_pos_as_ndarray[:, 1],
-                                          agent_pos_as_ndarray[:, 0],
-                                          c=self.colors, marker="o", edgecolors="black",
-                                          s=2000 / self.grid.dim)
+        if self.args.num_agents > 0:
+            self.goal_scat = self.ax.scatter(goal_pos_as_ndarray[:, 1],
+                                            goal_pos_as_ndarray[:, 0],
+                                            c=self.colors, marker="P", edgecolors="black",
+                                            s=3500 / self.grid.dim)
+            self.agent_scat = self.ax.scatter(agent_pos_as_ndarray[:, 1],
+                                            agent_pos_as_ndarray[:, 0],
+                                            c=self.colors, marker="o", edgecolors="black",
+                                            s=2000 / self.grid.dim)
 
     def render(self) -> None:
         """

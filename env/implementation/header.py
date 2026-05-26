@@ -3,7 +3,7 @@ Provides utility types, functions, constants.
 """
 
 from dataclasses import dataclass
-from enum import IntEnum
+from enum import IntEnum, StrEnum
 import numpy as np
 
 # classes
@@ -105,12 +105,12 @@ HAZARD_DMG = 10.0
 
 BETA = 0.5
 
-class HazardDamageType(IntEnum):
+class HazardDamageType(StrEnum):
     """
     Describes all posible hazard damage formulations.
     """
-    CONSTANT = 0
-    DISTANCE = 1
+    CONSTANT = "constant"
+    DISTANCE = "distance"
 
 ORIGIN = -1
 

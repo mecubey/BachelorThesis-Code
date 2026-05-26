@@ -46,7 +46,7 @@ class Logger:
         """
         self.makespan = makespan
 
-    def record_last_move_cost(self, last_move_cost: float):
+    def record_soc(self, last_move_cost: float):
         """
         Add the cost of the last move to the SOC.
         """

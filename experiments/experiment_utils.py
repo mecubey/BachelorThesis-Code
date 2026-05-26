@@ -5,12 +5,9 @@ Utility methods, constants, etc. for experiments.
 import sys
 sys.path.insert(0, '')
 
-from enum import Enum
-from env.implementation.pibt.pibt import PIBT
+from enum import StrEnum
 from env.implementation.header import (EnvParams,
-                                       HazardDamageType,
-                                       Statistic)
-from env.implementation.pregenerate import all_free_tiles, wall_maps
+                                       HazardDamageType)
 
 default_params = EnvParams(consider_hazards=True,
                            with_decay=False,
@@ -23,92 +20,65 @@ default_params = EnvParams(consider_hazards=True,
                            max_timestep=150,
                            render_mode=None)
 
-class PlannerType(Enum):
+LABELS = ["HA", "HUA"]
+
+MAP_NAMES = ["33x33, 200 agents"]
+
+NUM_SPLITS = 3
+
+BASE_SPLITS = [i/(NUM_SPLITS-1) for i in range(NUM_SPLITS)]
+DIR_SPREAD_SPLITS = [[elem]*4 for elem in BASE_SPLITS]
+
+SEEDS = list(range(1))
+
+class PlannerType(StrEnum):
     """
     Specifies planner type.
     """
-    HAZARD_AWARE = 1
-    HAZARD_UNAWARE = 2
+    HAZARD_AWARE = "HA"
+    HAZARD_UNAWARE = "HUA"
 
-class HazardParameter(Enum):
+class Parameter(StrEnum):
     """
     Specifies varying parameter.
     """
-    SPAWN_PROB = 1
-    SPREAD_PROB = 2
-    DIR_SPREAD_PROB = 3
+    SPAWN_PROB = "spawn probability"
+    SPREAD_PROB = "spread probability"
+    DIR_SPREAD_PROB = "directional spread probabilities"
 
-LABELS = ["HA", "NHA"]
-
-def run_experiment(map_idx: int, seed: int, env) -> Statistic:
+class Metric(StrEnum):
     """
-    For a given seed and enviroment parameters,
-    calculate the SOC, accumulated hazard damage,
-    success rate, makespan.
-
-    Args:
-        params (EnvParams): Enviroment parameters.
-        episode_seeds (list[int]): Set of seeds.
-
-    Returns:
-        Statistic:
-        Total hazard damage,
-        SoC,
-        finish status,
-        makespan.
+    Specifies recorded metric.
     """
-    env.reset(wall_map=wall_maps[map_idx],
-              free_tiles=all_free_tiles[map_idx],
-              env_seed=seed,
-              zone_seed=seed)
+    TOTAL_HAZARD_DMG = "total hazard damage"
+    SOC = "soc"
+    SOC_AND_TOTAL_HAZARD_DMG = "soc + total hazard damage"
+    MAKESPAN = "makespan"
+    SUCCESS_RATE = "success rate"
 
-    planner = PIBT(grid=env.grid,
-                   zone=env.zone,
-                   with_decay=env.args.with_decay,
-                   consider_hazards=env.args.consider_hazards,
-                   seed=seed)
+METRIC_AXES = {Metric.TOTAL_HAZARD_DMG: (1, 0),
+               Metric.SOC: (1, 1),
+               Metric.SUCCESS_RATE: (0, 2),
+               Metric.MAKESPAN: (0, 1),
+               Metric.SOC_AND_TOTAL_HAZARD_DMG: (1, 2)}
 
-    done = False
-    while not done:
-        actions_dict = planner.step()
-        termination, truncation = env.step(actions_dict)
-        done = termination or truncation
+PARAMETER_LIMITS = {Parameter.SPAWN_PROB: [0, 0.5, 1],
+                    Parameter.SPREAD_PROB: [0, 0.5, 1],
+                    Parameter.DIR_SPREAD_PROB: [0, 0.5, 1]}
 
-    return env.logger.get_statistics()
+METRIC_LIMITS = {Metric.TOTAL_HAZARD_DMG: [0, 1, 2, 3, 4],
+                 Metric.SOC: [0, 1, 2, 3, 4],
+                 Metric.SUCCESS_RATE: [0, 0.5, 1.05],
+                 Metric.MAKESPAN: [1, 2, 3, 4],
+                 Metric.SOC_AND_TOTAL_HAZARD_DMG: [0, 1, 2, 3, 4]}
 
-def plot_data(*,
-              ax,
-              xpoints: list[float],
-              ha_ypoints: list[float],
-              max_ha_ypoints: list[float],
-              min_ha_ypoints: list[float],
-              nha_ypoints: list[float],
-              max_nha_ypoints: list[float],
-              min_nha_ypoints: list[float],
-              x_axis_title: str,
-              y_axis_title: str,
-              x_limits: list[int],
-              y_limits: list[int]):
+Data = dict[Metric, dict[str, dict[PlannerType, list[float]]]]
+
+def get_graph_name(*,
+                   varying_param: Parameter,
+                   dmg_type: HazardDamageType,
+                   map_idx: int) -> str:
     """
-    Plot given data.
-    Always produces a graph for hazard aware and
-    not hazard aware planner.
+    Generate a name for the plot of the experiment.
     """
-    ax.plot(xpoints, ha_ypoints, label=LABELS[0])
-    ax.fill_between(xpoints,
-                    min_ha_ypoints,
-                    max_ha_ypoints,
-                    color="blue",
-                    alpha=0.2)
-    ax.plot(xpoints, nha_ypoints, label=LABELS[1])
-    ax.fill_between(xpoints,
-                    min_nha_ypoints,
-                    max_nha_ypoints,
-                    color="orange",
-                    alpha=0.2)
-    ax.set_xlabel(x_axis_title)
-    ax.set_ylabel(y_axis_title)
-    ax.set_xlim([x_limits[0], x_limits[-1]])
-    ax.set_ylim([y_limits[0], y_limits[-1]])
-    ax.set_xticks(x_limits)
-    ax.set_yticks(y_limits)
+    return f"{varying_param}_{dmg_type}_map{map_idx}.png"
