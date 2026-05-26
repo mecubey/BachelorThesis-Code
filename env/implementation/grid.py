@@ -3,10 +3,9 @@ Grid class to manage reservations and checking cell states.
 """
 
 from .header import (Position,
-                     IntArr,
+                     BoolArr,
                      Action,
                      ACT_TO_DIR,
-                     GridOffsets,
                      DIR_ARR)
 from typing import Callable
 
@@ -15,18 +14,19 @@ class Grid:
     Represents a 2D grid with walls, zones, agents and agents' goals.
     """
     def __init__(self, *,
-                 field: IntArr,
+                 wall_map: BoolArr,
+                 zone_map: BoolArr,
                  max_timestep: int,
                  num_agents: int,
-                 get_current_timestep: Callable[[], int],
+                 get_episode_progress: Callable[[], float],
                  agent_positions: list[Position],
                  goal_positions: list[Position]) -> None:
         # each cell contains [is_no_wall, is_zone, is_agent]
-        self.field = field
+        self.wall_map = wall_map
+        self.zone_map = zone_map
         self.max_timestep = max_timestep
         self.num_agents = num_agents
-        self.get_episode_progress: Callable[[], float] = lambda: (get_current_timestep() /
-                                                                  max_timestep)
+        self.get_episode_progress: Callable[[], float] = get_episode_progress
         self.agent_idx = list(range(num_agents))
         self.agent_positions: list[Position] = agent_positions
         self.goal_positions: list[Position] = goal_positions
@@ -37,7 +37,7 @@ class Grid:
         Dimension of the grid. 
         Note that the grid is a square and is surrounded by a wall.
         """
-        return self.field.shape[0]
+        return self.wall_map.shape[0]
 
     def is_agent_on_goal(self, a_idx: int) -> bool:
         """
@@ -66,27 +66,16 @@ class Grid:
                   f" {action} at position {self.agent_positions[a_idx]}")
             return
 
-        self.set_agent_in_grid(self.agent_positions[a_idx], False)
         self.agent_positions[a_idx] += ACT_TO_DIR[action]
-        self.set_agent_in_grid(self.agent_positions[a_idx], True)
 
-    def set_zone_in_grid(self, pos: Position, val: bool):
+    def set_zone_in_map(self, pos: Position, val: bool):
         """
         Sets/Removes the zone at a specified position.
 
         Args:
             pos (Position): Position where zone is set/removed.
         """
-        self.field[*pos, GridOffsets.ZONE] = int(val)
-
-    def set_agent_in_grid(self, pos: Position, val: bool):
-        """
-        Sets/Removes an agent at a specified position.
-
-        Args:
-            pos (Position): Position where the agent is set/removed.
-        """
-        self.field[*pos, GridOffsets.AGENT] += 1 if val else -1
+        self.zone_map[*pos] = val
 
     def get_neighbours_at(self, pos: Position) -> list[Position]:
         """
@@ -113,28 +102,6 @@ class Grid:
         """
         return not self.contains_wall(pos+ACT_TO_DIR[action])
 
-    def contains_agent(self, pos: Position) -> bool:
-        """Returns true if the position contains atleast one agent, false otherwise.
-
-        Args:
-            pos (Position): Position to be checked.
-
-        Returns:
-            bool: `True` if agent(s) on `pos`, `False` otherwise.
-        """
-        return self.field[*pos, GridOffsets.AGENT] > 0
-
-    def contains_multiple_agents(self, pos: Position) -> bool:
-        """Returns true if the position contains more than one agent, false otherwise.
-
-        Args:
-            pos (Position): Position to be checked.
-
-        Returns:
-            bool: `True` if agents on `pos`, `False` otherwise.
-        """
-        return self.field[*pos, GridOffsets.AGENT] > 1
-
     def contains_zone(self, pos: Position) -> bool:
         """Returns true if the position contains a zone, false otherwise.
 
@@ -144,7 +111,7 @@ class Grid:
         Returns:
             bool: `True` if zone on `pos`, `False` otherwise.
         """
-        return self.field[*pos, GridOffsets.ZONE]
+        return self.zone_map[*pos]
 
     def contains_wall(self, pos: Position) -> bool:
         """Returns true if the position contains a wall, false otherwise.
@@ -155,4 +122,4 @@ class Grid:
         Returns:
             bool: `True` if wall on `pos`, `False` otherwise.
         """
-        return not self.field[*pos, GridOffsets.NO_WALL]
+        return self.wall_map[*pos]

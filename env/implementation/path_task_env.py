@@ -2,10 +2,10 @@
 Contains the implementation of the PathTask enviroment.
 """
 
-from typing import Any
+from copy import deepcopy
+from typing import Any, cast
 import numpy as np
 from .zone import Zone
-from .maze import gen_maze
 from . import header as h
 import matplotlib.pyplot as plt
 from .grid import Grid
@@ -48,54 +48,43 @@ class PathTaskMultiAgentEnv:
         self.longest_shortest_path: float = 0
 
     def reset(self, *,
-              env_seed: int|None = None,
-              maze_seed: int|None = None,
-              zone_seed: int|None = None) -> None:
+              wall_map: h.BoolArr,
+              free_tiles: list[h.Position],
+              env_seed: int = 0,
+              zone_seed: int = 0) -> None:
         """
         Resets the enviroment's attributes. Returns infos.
         """
-        self.rng = np.random.default_rng(env_seed)
-
-        # for a single cell:
-        # no_wall (1),
-        # zone (1),
-        # agent (1)
-        grid_dim = 2*self.args.field_dim-1
-        field: h.IntArr = np.zeros((grid_dim + 2, # add surrounding wall
-                                    grid_dim + 2, # add surrounding wall
-                                    3),
-                                    dtype=h.DTYPE_INT)
-
         self.timestep = 0
 
-        # set maze in global_obs and get tiles with no walls
-        free_tiles = gen_maze(maze_buffer=field,
-                              dim=self.args.field_dim,
-                              maze_intensity=self.args.maze_intensity,
-                              exp_dim=grid_dim,
-                              seed=maze_seed)
+        self.rng = np.random.default_rng(env_seed)
+
+        free_tiles_idxs = np.arange(len(free_tiles))
 
         # AGENTS
         # generate all agent positions (agents cannot overlap with eachother)
         self.agent_positions = []
-        for pos in self.rng.choice(free_tiles,
-                                   size=self.args.num_agents,
-                                   replace=False):
-            self.agent_positions.append(h.Position(*pos))
+        for pos_idx in self.rng.choice(free_tiles_idxs,
+                                       size=self.args.num_agents,
+                                       replace=False):
+            pos_idx = cast(int, pos_idx)
+            self.agent_positions.append(deepcopy(free_tiles[pos_idx]))
 
         # GOALS
         # generate all goal positions (goals cannot overlap with eachother)
         self.goal_positions = []
-        for pos in self.rng.choice(free_tiles,
-                                   size=self.args.num_agents,
-                                   replace=False):
-            self.goal_positions.append(h.Position(*pos))
+        for pos_idx in self.rng.choice(free_tiles_idxs,
+                                       size=self.args.num_agents,
+                                       replace=False):
+            pos_idx = cast(int, pos_idx)
+            self.goal_positions.append(free_tiles[pos_idx])
 
         # GRID
-        self.grid = Grid(field=field,
+        self.grid = Grid(wall_map=wall_map,
+                         zone_map=np.zeros(wall_map.shape, dtype=h.DTYPE_BOOL),
                          max_timestep=self.args.max_timestep,
                          num_agents=self.args.num_agents,
-                         get_current_timestep=lambda: self.timestep,
+                         get_episode_progress=lambda: self.timestep / self.args.max_timestep,
                          agent_positions=self.agent_positions,
                          goal_positions=self.goal_positions)
 
@@ -106,10 +95,6 @@ class PathTaskMultiAgentEnv:
                          max_num_spread=self.args.max_num_spread,
                          dmg_type=self.args.hazard_dmg_type,
                          seed=zone_seed)
-
-        # set agents in grid
-        for i in range(self.args.num_agents):
-            self.grid.set_agent_in_grid(self.agent_positions[i], True)
 
         # LOGGING
         self.logger.reset()
@@ -168,18 +153,6 @@ class PathTaskMultiAgentEnv:
 
         self.timestep += 1
 
-        # uncomment this for collision checking
-        # since PIBT is collision-free, no need for collision checking
-        #for i in self.grid.agent_idx:
-        #    # check for collisions
-        #    if self.grid.contains_multiple_agents(self.agent_positions[i]):
-        #        for j in self.grid.agent_idx:
-        #            if self.agent_positions[i] == self.agent_positions[j]:
-        #                # reverse action of agent
-        #                self.grid.move_agent_in_grid(i,
-        #                                             h.ACT_TO_OPPOSITE_ACT
-        #                                             [actions[j]])
-
         if self.args.render_mode == "human":
             self.render()
 
@@ -209,11 +182,10 @@ class PathTaskMultiAgentEnv:
 
         # base: white free, black wall
         img = np.ones((self.grid.dim, self.grid.dim, 3), dtype=h.DTYPE_FLOAT)
-        img[self.grid.field[:, :, h.GridOffsets.NO_WALL] == 0] = [0, 0, 0]
+        img[self.grid.wall_map[...] == 1] = [0, 0, 0]
 
         # zone: light red tint
-        zone_mask = self.grid.field[:, :, h.GridOffsets.ZONE] == 1
-        img[zone_mask] = [1.0, 0.7, 0.7]
+        img[self.grid.zone_map[...] == 1] = [1.0, 0.7, 0.7]
 
         return img
 

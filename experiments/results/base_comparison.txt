@@ -1,0 +1,3 @@
+Success rate of HA: 0.939
+Success rate of NHA: 0.9445
+Averaged over 2000 episodes.

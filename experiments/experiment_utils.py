@@ -7,19 +7,15 @@ sys.path.insert(0, '')
 
 from enum import Enum
 from env.implementation.pibt.pibt import PIBT
-from env.path_task_env_v0 import raw_env
 from env.implementation.header import (EnvParams,
                                        HazardDamageType,
                                        Statistic)
-
-NUM_VALUES = 10
+from env.implementation.pregenerate import all_free_tiles, wall_maps
 
 default_params = EnvParams(consider_hazards=True,
                            with_decay=False,
                            hazard_dmg_type=HazardDamageType.CONSTANT,
                            num_agents=200,
-                           field_dim=16,
-                           maze_intensity=0.2,
                            spawn_prob=0.7,
                            spread_prob=0.4,
                            max_num_spread=10,
@@ -44,7 +40,7 @@ class HazardParameter(Enum):
 
 LABELS = ["HA", "NHA"]
 
-def run_experiment(params: EnvParams, seed: int) -> Statistic:
+def run_experiment(map_idx: int, seed: int, env) -> Statistic:
     """
     For a given seed and enviroment parameters,
     calculate the SOC, accumulated hazard damage,
@@ -58,12 +54,12 @@ def run_experiment(params: EnvParams, seed: int) -> Statistic:
         Statistic:
         Total hazard damage,
         SoC,
-        success rate,
-        makespan (np.nan if unsuccesfull).
+        finish status,
+        makespan.
     """
-    env = raw_env(params)
-    env.reset(env_seed=seed,
-              maze_seed=seed,
+    env.reset(wall_map=wall_maps[map_idx],
+              free_tiles=all_free_tiles[map_idx],
+              env_seed=seed,
               zone_seed=seed)
 
     planner = PIBT(grid=env.grid,

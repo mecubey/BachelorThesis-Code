@@ -7,7 +7,7 @@ from enum import IntEnum
 import numpy as np
 
 # classes
-@dataclass(order=True, frozen=True)
+@dataclass(order=True)
 class Position:
     """
     Represents a 2D position.
@@ -32,6 +32,15 @@ class Position:
             return Position(self.x + other.x, self.y + other.y)
         return Position(self.x+other, self.y+other)
 
+    def __iadd__(self, other: Position|int):
+        if isinstance(other, Position):
+            self.x += other.x
+            self.y += other.y
+            return self
+        self.x += other
+        self.y += other
+        return self
+
     def __sub__(self, other: Position):
         return Position(self.x - other.x, self.y - other.y)
 
@@ -44,6 +53,11 @@ class Position:
     def __iter__(self):
         yield self.x
         yield self.y
+
+    def __eq__(self, value: object) -> bool:
+        if not isinstance(value, Position):
+            raise ValueError(f"Cannot compare {value} and Position!")
+        return self.x == value.x and self.y == value.y
 
     def __hash__(self):
         return hash((self.x, self.y))
@@ -70,14 +84,12 @@ class EnvParams:
     consider_hazards: bool
     with_decay: bool
     num_agents: int
-    maze_intensity: float
     spawn_prob: float
     spread_prob: float
     max_num_spread: int
     dir_spread_probs: list[float]
     hazard_dmg_type: HazardDamageType
     max_timestep: int
-    field_dim: int
     render_mode: str|None
 
 @dataclass
@@ -103,14 +115,6 @@ class HazardDamageType(IntEnum):
 ORIGIN = -1
 
 ALL_OUTGOING = 5
-
-class GridOffsets(IntEnum):
-    """
-    Holds offsets used to assign values to grid cells in observations.
-    """
-    NO_WALL = 0
-    ZONE = 1
-    AGENT = 2
 
 class Action(IntEnum):
     """

@@ -59,3 +59,7 @@ Every other metric uses all episodes.
 
 ### Success Rate
 - How many episodes were successfully completed? (as percentage)
+
+
+# TODO
+- fix the scales

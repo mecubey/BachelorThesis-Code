@@ -4,8 +4,7 @@ Contains zone related classes, attributes, methods.
 
 import numpy as np
 from .grid import Grid
-from .header import (IntArr,
-                     HazardDamageType,
+from .header import (HazardDamageType,
                      Position,
                      ACTS_ARR,
                      ACT_TO_DIR,
@@ -19,14 +18,13 @@ class Zone():
     """
     def __init__(self, *,
                  grid: Grid,
-                 free_tiles: IntArr,
+                 free_tiles: list[Position],
                  dir_spread_probs: list[float],
                  max_num_spread: int,
                  dmg_type: HazardDamageType,
                  seed: int|None = None) -> None:
         self.grid = grid
         self.free_tiles = free_tiles
-        self.num_free_tiles = len(free_tiles)
         self.dir_spread_probs = dir_spread_probs
         self.max_num_spread = max_num_spread
         self.dmg_type = dmg_type
@@ -43,8 +41,8 @@ class Zone():
         """
         assert self.empty(), \
             f"occupied_tiles needs to be empty before spawning, got {self.occupied_tiles}"
-        start_pos = Position(*self.free_tiles[self.rng.choice(self.num_free_tiles)])
-        self.grid.set_zone_in_grid(start_pos, True)
+        start_pos = self.free_tiles[self.rng.choice(len(self.free_tiles))]
+        self.grid.set_zone_in_map(start_pos, True)
         self.occupied_tiles.append(start_pos)
         self.zone_center = start_pos
         self.progress()
@@ -70,7 +68,7 @@ class Zone():
                     continue
 
                 newly_occupied_tiles.append(new_pos)
-                self.grid.set_zone_in_grid(new_pos, True)
+                self.grid.set_zone_in_map(new_pos, True)
 
         self.occupied_tiles.extend(newly_occupied_tiles)
 
@@ -101,7 +99,7 @@ class Zone():
         Remove all currently occupied tiles.
         """
         for pos in self.occupied_tiles:
-            self.grid.set_zone_in_grid(pos, False)
+            self.grid.set_zone_in_map(pos, False)
         self.occupied_tiles = []
         self.spread_progress = 0
         self.zone_center = None

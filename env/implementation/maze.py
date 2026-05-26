@@ -57,16 +57,18 @@ def gen_maze_graph(*,
     return maze
 
 def gen_maze(*,
-             maze_buffer: h.IntArr,
              dim: int,
              maze_intensity: float,
-             exp_dim: int,
              seed: int|None = None,
-             iter_c: int = 10) -> h.IntArr:
+             iter_c: int = 10) -> tuple[h.BoolArr, list[h.Position]]:
     """
-    Fills a maze buffer according to a maze graph (directed graph). \n
-    Returns a list of 2D indices which indicate wall-free tiles.
+    Generate a maze according to a maze graph (directed graph). \n
+    Returns maze and a list of 2D indices which indicate wall-free tiles.
     """
+    exp_dim: int = 2*dim-1
+
+    maze_buffer: h.BoolArr = np.ones((exp_dim+2, exp_dim+2), dtype=h.DTYPE_BOOL)
+
     rng = np.random.default_rng(seed)
 
     maze_graph: h.FloatArr = gen_maze_graph(dim=dim,
@@ -76,27 +78,31 @@ def gen_maze(*,
 
     # randomly remove walls from cells which are not reached by the graph
     unreach_idx_base: h.IntArr = np.arange(2, 2*dim-1, 2, dtype=h.DTYPE_INT)
-    unreach_no_walls: h.BoolArr = rng.choice([0, 1],
+    unreach_no_walls: h.BoolArr = rng.choice([1, 0],
                                              size=((dim-1)*(dim-1)),
                                              p=[maze_intensity,
                                              1-maze_intensity])
     grid_positions: h.IntArr = np.array(list(product(unreach_idx_base, unreach_idx_base)),
                                         dtype=h.DTYPE_INT)
     maze_buffer[grid_positions[:, 0],
-                grid_positions[:, 1],
-                h.GridOffsets.NO_WALL] = unreach_no_walls
-    free_tiles: list[h.IntArr] = []
+                grid_positions[:, 1]] = unreach_no_walls
+
+    free_tiles: set[h.Position] = set()
+    for i in range(exp_dim):
+        for j in range(exp_dim):
+            if maze_buffer[i, j] == 0:
+                free_tiles.add(h.Position(i, j))
 
     for i in range(dim):
         for j in range(dim):
-            maze_graph_pos: h.IntArr = np.array([i, j], dtype=h.DTYPE_INT)
-            maze_pos: h.IntArr = maze_graph_pos*2
+            maze_graph_pos: h.Position = h.Position(i, j)
+            maze_pos: h.Position = maze_graph_pos*2
 
             cell = maze_graph[*maze_graph_pos]
 
             # open cell centers
-            maze_buffer[*(maze_pos+1), h.GridOffsets.NO_WALL] = 1
-            free_tiles.append(maze_pos+1)
+            maze_buffer[*(maze_pos+1)] = 0
+            free_tiles.add(maze_pos+1)
 
             if cell == h.ALL_OUTGOING:
                 allowed: list[h.Action] = h.ACTS_ARR[:-1]
@@ -105,10 +111,10 @@ def gen_maze(*,
                 allowed: list[h.Action] = [cell]
 
             for d in allowed:
-                new_pos: h.IntArr = maze_pos+h.ACT_TO_DIR_NDARRAY[d]
-                if 0 <= new_pos[0] < exp_dim and 0 <= new_pos[1] < exp_dim:
+                new_pos: h.Position = maze_pos+h.ACT_TO_DIR[d]
+                if 0 <= new_pos.x < exp_dim and 0 <= new_pos.y < exp_dim:
                     # remove wall between cells
-                    maze_buffer[*(new_pos+1), h.GridOffsets.NO_WALL] = 1
-                    free_tiles.append(new_pos+1)
+                    maze_buffer[*(new_pos+1)] = 0
+                    free_tiles.add(new_pos+1)
 
-    return np.unique(np.array(free_tiles, dtype=h.DTYPE_INT), axis=0) # remove duplicates
+    return maze_buffer, list(free_tiles)
