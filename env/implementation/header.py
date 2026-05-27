@@ -105,6 +105,8 @@ HAZARD_DMG = 10.0
 
 BETA = 0.5
 
+DECAY_SPEED = 3
+
 class HazardDamageType(StrEnum):
     """
     Describes all posible hazard damage formulations.

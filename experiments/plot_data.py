@@ -6,8 +6,8 @@ from experiment_utils import (LABELS,
                               METRIC_AXES,
                               METRIC_LIMITS,
                               BASE_SPLITS,
+                              AGENTS_SPLITS,
                               PARAMETER_LIMITS,
-                              MAP_NAMES,
                               Metric,
                               HazardDamageType,
                               PlannerType,
@@ -34,16 +34,12 @@ def subplot_data(*,
                  x_axis_title: str,
                  x_limits: list[int],
                  y_axis_title: str,
-                 y_limits: list[int],
-                 x_spec_ticks: list[str] = None):
+                 y_limits: list[int]):
     """
     Plot a subplot of given data.
     Always produces a graph for hazard aware and
     hazard unaware.
     """
-    if x_spec_ticks is None:
-        x_spec_ticks = ["0", "0.5", "1"]
-
     ax.plot(xpoints, ha_ypoints, label=LABELS[0])
     ax.fill_between(xpoints,
                     min_ha_ypoints,
@@ -60,7 +56,11 @@ def subplot_data(*,
     ax.set_ylabel(y_axis_title)
     ax.set_xlim([x_limits[0], x_limits[-1]])
     ax.set_ylim([y_limits[0], y_limits[-1]])
-    ax.set_xticks(x_limits, x_spec_ticks)
+
+    if not x_axis_title == Parameter.AGENTS:
+        ax.set_xticks(x_limits, ["0", "0.5", "1"])
+    else:
+        ax.set_xticks(x_limits)
 
     if y_axis_title == Metric.SUCCESS_RATE:
         ax.set_yticks([0, 0.5,  1], ["0", "0.5", "1"])
@@ -70,6 +70,7 @@ def subplot_data(*,
 def plot_data(*,
               data: Data,
               map_id: int,
+              with_decay: bool,
               dmg_type: HazardDamageType,
               varied_param: Parameter):
     """
@@ -87,11 +88,10 @@ def plot_data(*,
     img = mpimg.imread(f"{map_path}map{map_id}.png")
     ax[0, 0].imshow(img)
     ax[0, 0].axis('off')
-    ax[0, 0].set_title(MAP_NAMES[map_id], fontsize=18)
 
     for m, ax_pos in METRIC_AXES.items():
         subplot_data(ax=ax[ax_pos],
-                     xpoints=BASE_SPLITS,
+                     xpoints=BASE_SPLITS if not varied_param == Parameter.AGENTS else AGENTS_SPLITS,
                      ha_ypoints=data[m]["avg"][PlannerType.HAZARD_AWARE],
                      max_ha_ypoints=data[m]["max"][PlannerType.HAZARD_AWARE],
                      min_ha_ypoints=data[m]["min"][PlannerType.HAZARD_AWARE],
@@ -113,6 +113,7 @@ def plot_data(*,
                fancybox=True,
                ncol=2)
 
-    plt.savefig(results_path+get_graph_name(varying_param=varied_param,
+    plt.savefig(results_path+get_graph_name(with_decay=with_decay,
+                                            varying_param=varied_param,
                                             dmg_type=dmg_type,
                                             map_idx=0), dpi=300)

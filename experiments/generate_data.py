@@ -16,12 +16,14 @@ from env.implementation.path_task_env import PathTaskMultiAgentEnv
 from env.implementation.pibt.pibt import PIBT
 from env.path_task_env_v0 import raw_env
 from env.implementation.pregenerate import all_free_tiles, wall_maps
+from statistics import mean
 from experiment_utils import (Parameter,
                               PlannerType,
                               Metric,
                               Data,
                               NUM_SPLITS,
                               BASE_SPLITS,
+                              AGENTS_SPLITS,
                               DIR_SPREAD_SPLITS,
                               SEEDS,
                               default_params)
@@ -42,6 +44,8 @@ def set_param_value(*,
             env_params.dir_spread_probs = DIR_SPREAD_SPLITS[val]
         case Parameter.SPREAD_PROB:
             env_params.spread_prob = BASE_SPLITS[val]
+        case Parameter.AGENTS:
+            env_params.num_agents = AGENTS_SPLITS[val]
 
 def run_experiment(*,
                    map_idx: int,
@@ -84,6 +88,7 @@ def run_experiment(*,
 
 def gen_data(*,
              map_id: int,
+             with_decay: bool,
              varying_param: Parameter|None = None,
              dmg_type: HazardDamageType = HazardDamageType.CONSTANT) -> str:
     """
@@ -101,8 +106,8 @@ def gen_data(*,
     # we don't want to modify the default parameters
     env_params = deepcopy(default_params)
 
-    if dmg_type is not None:
-        env_params.hazard_dmg_type = dmg_type
+    env_params.hazard_dmg_type = dmg_type
+    env_params.with_decay = with_decay
 
     env = raw_env(env_params)
 
@@ -141,18 +146,18 @@ def gen_data(*,
             # add collected statistics from seeds to total statistics
             # we only use successful episodes (nanmean, nanmax, nanmin)
             tmp_mean_seed_hazard_dmgs = (np.nan if not seed_hazard_dmgs
-                                         else np.nanmean(seed_hazard_dmgs))
+                                         else mean(seed_hazard_dmgs))
             tmp_max_seed_hazard_dmgs = (np.nan if not seed_hazard_dmgs
-                                        else np.nanmax(seed_hazard_dmgs))
+                                        else max(seed_hazard_dmgs))
             tmp_min_seed_hazard_dmgs = (np.nan if not seed_hazard_dmgs
-                                        else np.nanmin(seed_hazard_dmgs))
+                                        else min(seed_hazard_dmgs))
             data[Metric.TOTAL_HAZARD_DMG]["avg"][t].append(tmp_mean_seed_hazard_dmgs)
             data[Metric.TOTAL_HAZARD_DMG]["max"][t].append(tmp_max_seed_hazard_dmgs)
             data[Metric.TOTAL_HAZARD_DMG]["min"][t].append(tmp_min_seed_hazard_dmgs)
 
-            tmp_mean_seed_socs = np.nan if not seed_socs else np.nanmean(seed_socs)
-            tmp_max_seed_socs = np.nan if not seed_socs else np.nanmax(seed_socs)
-            tmp_min_seed_socs = np.nan if not seed_socs else np.nanmin(seed_socs)
+            tmp_mean_seed_socs = np.nan if not seed_socs else mean(seed_socs)
+            tmp_max_seed_socs = np.nan if not seed_socs else max(seed_socs)
+            tmp_min_seed_socs = np.nan if not seed_socs else min(seed_socs)
             data[Metric.SOC]["avg"][t].append(tmp_mean_seed_socs)
             data[Metric.SOC]["max"][t].append(tmp_max_seed_socs)
             data[Metric.SOC]["min"][t].append(tmp_min_seed_socs)
@@ -165,21 +170,21 @@ def gen_data(*,
                                                                    tmp_min_seed_socs)
 
             data[Metric.MAKESPAN]["avg"][t].append((np.nan if not seed_makespans
-                                                    else np.nanmean(seed_makespans)))
+                                                    else mean(seed_makespans)))
             data[Metric.MAKESPAN]["max"][t].append((np.nan if not seed_makespans
-                                                    else np.nanmax(seed_makespans)))
+                                                    else max(seed_makespans)))
             data[Metric.MAKESPAN]["min"][t].append((np.nan if not seed_makespans
-                                                    else np.nanmin(seed_makespans)))
+                                                    else min(seed_makespans)))
 
             # min, max of success rate should be the same as mean (no shaded area)
-            tmp_mean_seed_fins = np.nanmean(seed_fins)
+            tmp_mean_seed_fins = mean(seed_fins)
             data[Metric.SUCCESS_RATE]["avg"][t].append(tmp_mean_seed_fins)
             data[Metric.SUCCESS_RATE]["max"][t].append(tmp_mean_seed_fins)
             data[Metric.SUCCESS_RATE]["min"][t].append(tmp_mean_seed_fins)
 
     # now pickle the data
-    experiment_dir: str = f"{data_path}map({map_id})_varparam({varying_param})_" + \
-                          f"dmgtype({dmg_type})"
+    experiment_dir: str = f"{data_path}map({map_id})_withdecay({with_decay})_" + \
+                          f"varparam({varying_param})_dmgtype({dmg_type})"
 
     # create the experiment directory
     if not os.path.exists(experiment_dir):

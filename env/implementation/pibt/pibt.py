@@ -11,7 +11,11 @@ and adjusted to my use case.
 from .dist_table import DistTable
 import numpy as np
 from ..grid import Grid
-from ..header import Position, DIR_TO_ACT, Action, BETA
+from ..header import (Position,
+                      DIR_TO_ACT,
+                      Action,
+                      BETA,
+                      DECAY_SPEED)
 from ..zone import Zone
 
 class PIBT:
@@ -106,7 +110,7 @@ class PIBT:
             float: Priority value.
         """
         return (BETA * self.dist_tables[i].get(v) + (1-BETA) * self.zone.get_hazard_dmg(v)
-                * (max(0, 1-self.grid.get_episode_progress()) if self.with_decay else 1)
+                * (max(0, 1-self.grid.get_episode_progress()*DECAY_SPEED) if self.with_decay else 1)
                 * self.consider_hazards)
 
     def func_pibt(self, q_from: list[Position], q_to: list[Position], i: int) -> bool:

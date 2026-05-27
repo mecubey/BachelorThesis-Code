@@ -22,14 +22,11 @@ default_params = EnvParams(consider_hazards=True,
 
 LABELS = ["HA", "HUA"]
 
-MAP_NAMES = ["33x33, 200 agents"]
-
-NUM_SPLITS = 3
-
+SEEDS = list(range(50))
+NUM_SPLITS = 20
 BASE_SPLITS = [i/(NUM_SPLITS-1) for i in range(NUM_SPLITS)]
 DIR_SPREAD_SPLITS = [[elem]*4 for elem in BASE_SPLITS]
-
-SEEDS = list(range(1))
+AGENTS_SPLITS = [int(300*elem) for elem in BASE_SPLITS]
 
 class PlannerType(StrEnum):
     """
@@ -45,6 +42,7 @@ class Parameter(StrEnum):
     SPAWN_PROB = "spawn probability"
     SPREAD_PROB = "spread probability"
     DIR_SPREAD_PROB = "directional spread probabilities"
+    AGENTS = "agents"
 
 class Metric(StrEnum):
     """
@@ -64,7 +62,8 @@ METRIC_AXES = {Metric.TOTAL_HAZARD_DMG: (1, 0),
 
 PARAMETER_LIMITS = {Parameter.SPAWN_PROB: [0, 0.5, 1],
                     Parameter.SPREAD_PROB: [0, 0.5, 1],
-                    Parameter.DIR_SPREAD_PROB: [0, 0.5, 1]}
+                    Parameter.DIR_SPREAD_PROB: [0, 0.5, 1],
+                    Parameter.AGENTS: [0, 50, 100, 150, 200, 250, 300]}
 
 METRIC_LIMITS = {Metric.TOTAL_HAZARD_DMG: [0, 1, 2, 3, 4],
                  Metric.SOC: [0, 1, 2, 3, 4],
@@ -75,10 +74,11 @@ METRIC_LIMITS = {Metric.TOTAL_HAZARD_DMG: [0, 1, 2, 3, 4],
 Data = dict[Metric, dict[str, dict[PlannerType, list[float]]]]
 
 def get_graph_name(*,
+                   with_decay: bool,
                    varying_param: Parameter,
                    dmg_type: HazardDamageType,
                    map_idx: int) -> str:
     """
     Generate a name for the plot of the experiment.
     """
-    return f"{varying_param}_{dmg_type}_map{map_idx}.png"
+    return f"with_delay({with_decay})_{varying_param}_{dmg_type}_map{map_idx}.png"

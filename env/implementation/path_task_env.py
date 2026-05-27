@@ -119,6 +119,11 @@ class PathTaskMultiAgentEnv:
             {"agent_0": action_of_0, "agent_1": action_of_1, ...}
         Returns whether the enviroment has terminated or truncated.
         """
+        if self.args.num_agents == 0:
+            self.logger.record_episode_end(fin=1)
+            self.logger.record_makespan(makespan=0)
+            return True, False
+
         num_agents_on_goal: int = 0
 
         # we only progress the hazard once we know it has spread to at least one tile
