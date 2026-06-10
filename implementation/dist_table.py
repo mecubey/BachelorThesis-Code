@@ -10,12 +10,11 @@ https://github.com/Kei18/pypibt
 and adjusted to my use case.
 """
 
-from .mapf_utils import Position
-from .wall_map import WallMap
 from collections import deque
 from dataclasses import dataclass, field
-
 import numpy as np
+from .mapf_utils import Position
+from .wall_map import WallMap
 
 @dataclass
 class DistTable:

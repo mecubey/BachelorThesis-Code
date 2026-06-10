@@ -2,15 +2,22 @@
 Contains various utility methods, classes, constants, types.
 """
 
-from .memory import Memory
 import math
-from enum import Enum
+from enum import Enum, StrEnum
 from pathlib import Path
-from dataclasses import dataclass
 from copy import deepcopy
 import numpy as np
+from .memory import Memory
 
 # classes
+class HazardType(StrEnum):
+    """
+    Specifies hazard type.
+
+    CONSTANT - the probability of getting stuck stays the same
+    """
+    CONSTANT = "constant"
+
 class Direction(Enum):
     """
     Possible directions (4-connected grid).
@@ -143,18 +150,53 @@ class Map:
     def __setitem__(self, pos: Position, value: bool|int):
         self.tiles[pos.x * self.width + pos.y] = value
 
-@dataclass
 class Agent:
     """
     Represents an agent.
     """
-    id: int
-    memory: Memory
-    initial_priority: float
-    current_priority: float
-    initial_pos: Position
-    current_pos: Position
-    goal_pos: Position
+    def __init__(self, *,
+                i: int,
+                priority: float,
+                start_pos: Position,
+                goal_pos: Position) -> None:
+        self.id = i
+        self.memory = Memory()
+        self.initial_priority = priority
+        self.current_priority = priority
+        self.initial_pos = start_pos
+        self.current_pos = start_pos.deepcopy()
+        self.goal_pos = goal_pos
+        self.damage = 0
+        self.frozen_for = 0
+
+    def frozen(self) -> bool:
+        """
+        Check if agent is frozen.
+
+        If an agent is frozen, then it cannot move.
+        """
+        return self.frozen_for > 0
+
+    def decay_freeze(self) -> None:
+        """
+        Decrease the freeze time by 1.
+        """
+        self.frozen_for = max(self.frozen_for-1, 0)
+
+    def freeze(self) -> None:
+        """
+        Freeze agent. The more damage an agent has taken,
+        the longer it is frozen for.
+        """
+        self.frozen_for = self.damage
+
+    def increase_damage(self) -> None:
+        """
+        Increase damage of this agent by 1.
+
+        Damage value is clipped to MAX_DAMAGE.
+        """
+        self.damage = min(self.damage+1, MAX_DAMAGE)
 
     def move(self, action: Position) -> None:
         """
@@ -178,6 +220,8 @@ class Agent:
         """
         Reset position and priority of agent.
         """
+        self.damage = 0
+        self.frozen_for = 0
         self.current_priority = self.initial_priority
         self.current_pos = self.initial_pos.deepcopy()
         self.memory.reset()
@@ -205,6 +249,8 @@ MAX_NUM_INSTANCES = 25
 GLOBAL_HAZARD_SEED = 0
 
 GLOBAL_SOLVER_SEED = 0
+
+MAX_DAMAGE = 10
 
 STAY = Position(0, 0)
 

@@ -2,10 +2,10 @@
 Contains MAPFVisualizer class definition.
 """
 
-from mapf_instance import MAPFInstance
-from mapf_utils import Position
 import numpy as np
 import matplotlib.pyplot as plt
+from mapf_instance import MAPFInstance
+from mapf_utils import Position
 
 class MAPFVisualizer:
     """

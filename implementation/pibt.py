@@ -2,12 +2,12 @@
 Contains class definition of PIBT.
 """
 
+import numpy as np
 from .mapf_instance import MAPFInstance
 from .mapf_utils import (Position,
                          Positions,
                          Map,
                          INVALID_AGENT_ID)
-import numpy as np
 
 class PIBT:
     """
@@ -133,28 +133,31 @@ class PIBT:
         q_to: list[Position|None] = []
         hazard_prios: list[float] = [0]*self.instance.num_agents
 
-        # freeze agents if they are on a hazard tile
-        # NOTE: we loop again... isn't there anything more efficient?
+        # MAIN LOOP BEFORE PIBT ALGORITHM
         for i, agent in enumerate(self.instance.agents):
+            agent.decay_freeze()
             stuck = self.instance.hazard.is_stuck(agent.current_pos)
+            on_hazard = self.instance.hazard.on_hazard(agent.current_pos)
+
+            if on_hazard:
+                agent.memory.potential_stucks += 1
+                agent.increase_damage()
 
             if stuck:
+                agent.memory.observed_stucks += 1
+                agent.freeze()
+
+            if agent.frozen() or stuck:
                 q_to.append(agent.current_pos)
                 self.occupied_next[agent.current_pos] = i
-                agent.memory.observed_stucks += 1
-                agent.memory.potential_stucks += 1
             else:
                 q_to.append(None)
-
-            # SECOND TECHNIQUE: Hazard-Aware Prioritization
-            # increase priority of agents on or near hazards
-            on_hazard = self.instance.hazard.on_hazard(agent.current_pos)
-            if on_hazard and not stuck:
-                agent.memory.potential_stucks += 1
 
             estimation: float = agent.memory.estimation
 
             if on_hazard:
+                # SECOND TECHNIQUE: Hazard-Aware Agent Prioritization
+                # increase priority of agents on or near hazards
                 hazard_prios[i] += estimation
 
             for neighbour in self.instance.wall_map.neighbour_table[agent.current_pos]:
@@ -162,7 +165,7 @@ class PIBT:
                     continue
 
                 if self.instance.hazard.on_hazard(neighbour):
-                    # more dangerous to be on a hazard,
+                    # more dangerous to be on a hazard
                     # then near a hazard
                     hazard_prios[i] += estimation / 4
 

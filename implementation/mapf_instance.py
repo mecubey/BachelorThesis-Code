@@ -2,7 +2,8 @@
 Contains class definition of MAPFInstance and MAPFInstanceManager.
 """
 
-from .memory import Memory
+from pathlib import Path
+from copy import deepcopy
 from .hazard import (HazardConfig,
                      Hazard)
 from .wall_map import WallMap
@@ -15,8 +16,6 @@ from .mapf_utils import (Position,
                          get_scenario_path)
 from .dist_table import DistTable
 from .path_manager import PathManager
-from pathlib import Path
-from copy import deepcopy
 
 class MAPFInstanceManager:
     """
@@ -281,12 +280,9 @@ class MAPFInstance:
         new_goal_pos: Position = self.all_goal_positions[self.num_agents]
         new_dist_table: DistTable = self.all_dist_tables[self.num_agents]
         new_priority: float = new_dist_table.get(new_start_pos) /self.wall_map.width
-        self.agents.append(Agent(id=self.num_agents,
-                                 memory=Memory(),
-                                 initial_priority=new_priority,
-                                 current_priority=new_priority,
-                                 initial_pos=new_start_pos,
-                                 current_pos=new_start_pos.deepcopy(),
+        self.agents.append(Agent(i=self.num_agents,
+                                 priority=new_priority,
+                                 start_pos=new_start_pos,
                                  goal_pos=new_goal_pos))
         self.num_agents += 1
 
@@ -314,8 +310,8 @@ class MAPFInstance:
 
 
 if __name__ == "__main__":
-    from pibt import PIBT
-    from mapf_visualizer import MAPFVisualizer
+    #from pibt import PIBT
+    #from mapf_visualizer import MAPFVisualizer
 
     manager = MAPFInstanceManager(max_timestep=100,
                                   hazard_config="easy",
@@ -327,25 +323,25 @@ if __name__ == "__main__":
     for _ in range(10):
         instance.add_agent()
 
-    visualizer = MAPFVisualizer(instance)
+    #visualizer = MAPFVisualizer(instance)
 
-    solver = PIBT(dim=instance.wall_map.width,
-                  seed=0)
-    solver.set_instance(instance)
-    solver.set_hazard_awareness(True)
-    solver.reset()
+    #solver = PIBT(dim=instance.wall_map.width,
+    #              seed=0)
+    #solver.set_instance(instance)
+    #solver.set_hazard_awareness(True)
+    #solver.reset()
 
-    visualizer.render()
+    #visualizer.render()
     input()
 
     #print(instance.num_agents)
 
-    solver.consider_hazards = False
+    #solver.consider_hazards = False
 
     while True:
         instance.hazard_step()
-        solver.step()
-        visualizer.render()
+        #solver.step()
+        #visualizer.render()
         print([a.memory.estimation for a in instance.agents])
         input()
 

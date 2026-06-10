@@ -2,16 +2,15 @@
 Contains class definition of ExperimentRunner.
 """
 
+import pickle
+from typing import Any
+import numpy as np
 from .mapf_instance import MAPFInstanceManager
 from .mapf_utils import (EXPERIMENT_RESULTS_DIR,
                          GLOBAL_SOLVER_SEED,
                          MAX_NUM_INSTANCES)
 from .wall_map import WallMap
 from .pibt import PIBT
-import pickle
-from typing import Any
-from copy import deepcopy
-import numpy as np
 
 class ExperimentRunner:
     """
@@ -85,7 +84,7 @@ class ExperimentRunner:
         # we add one agent, test HA & HUA, record, then add another agent, ...
         # this we do only for the first instance
 
-        instance = deepcopy(self.manager.instances[0])
+        instance = self.manager.deepcopy_instance(0)
         self.solver.set_instance(instance)
         for _ in range(self.manager.get_max_num_agents()):
             instance.add_agent()
@@ -131,12 +130,12 @@ class ExperimentRunner:
         )
         pickle.dump(data, open(filepath, "wb"))
 
-    def record_and_save_data(self) -> None:
+    def record_all_and_save_data(self) -> None:
         """
         Runs all experiments, records the results, and saves them to disk.
         """
         self.record_soc_and_makespan()
-        #self.record_success_rate()
+        self.record_success_rate()
         self.save()
 
 if __name__ == "__main__":

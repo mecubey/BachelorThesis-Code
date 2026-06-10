@@ -2,14 +2,14 @@
 Contains class definitions of Hazard and HazardConfig.
 """
 
+from dataclasses import dataclass
+import yaml
+import numpy as np
 from .wall_map import WallMap
 from .mapf_utils import (Positions,
                         Position,
                         Map,
                         HAZARD_CONFIGS)
-from dataclasses import dataclass
-import yaml
-import numpy as np
 
 @dataclass
 class HazardConfig:
@@ -151,7 +151,7 @@ class Hazard:
         self.occupied_tiles.clear()
         self.reseed(self.seed)
         self.spread_progress = 0
-        
+
     def reseed(self, seed: int) -> None:
         """
         Reseed hazard RNG.
@@ -191,8 +191,6 @@ class Hazard:
         return self.config.base_stuck_prob
 
 if __name__ == "__main__":
-    import numpy as np
-
     test_config = HazardConfig.from_config("test")
 
     test_map = WallMap("empty-8-8")

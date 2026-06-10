@@ -4,13 +4,13 @@ Contains class definition of WallMap.
 Maps are taken from mapf.info.
 """
 
+from pathlib import Path
 from .mapf_utils import (Position,
                          Positions,
                          Map,
                          Direction,
                          DIR_TO_POS,
                          get_map_path)
-from pathlib import Path
 
 class WallMap(Map):
     """
