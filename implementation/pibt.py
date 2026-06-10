@@ -17,6 +17,7 @@ class PIBT:
                  dim: int,
                  seed: int) -> None:
         self.instance: MAPFInstance
+        self.seed: int = seed
         self.rng = np.random.default_rng(seed)
         self.occupied_now: Map = Map(dim, dim, "int")
         self.occupied_next: Map = Map(dim, dim, "int")
@@ -49,12 +50,12 @@ class PIBT:
         """
         self.consider_hazards = val
 
-    def get_vertex_priority(self,
+    def get_vertex_cost(self,
                             i: int,
                             v: Position,
                             estimation: float) -> float:
         """
-        Get priority for a specified agent and vertex.
+        Get cost for a specified agent and vertex.
 
         Args:
             i (int): Agent index.
@@ -62,11 +63,11 @@ class PIBT:
             estimation (float): Estimation of hazard stuck probability.
 
         Returns:
-            float: Priority value for the vertex.
+            float: Cost value for the vertex.
         """
         # FIRST TECHNIQUE: Hazard-Aware Vertex Priorization
         return (self.instance.all_dist_tables[i].get(v) +
-                estimation *
+                estimation * self.instance.hazard.on_hazard(v) *
                 self.consider_hazards)
 
     def reset(self) -> None:
@@ -75,6 +76,7 @@ class PIBT:
         """
         self.occupied_now.reset()
         self.occupied_next.reset()
+        self.reseed(self.seed)
         self.agent_idxs = list(range(self.instance.num_agents))
 
     def func_pibt(self, q_to: list[Position|None], i: int) -> bool:
@@ -91,7 +93,7 @@ class PIBT:
         # tie breaker
         self.rng.shuffle(candidates)
 
-        candidates.sort(key=lambda v: self.get_vertex_priority(i, v,
+        candidates.sort(key=lambda v: self.get_vertex_cost(i, v,
                                                                self
                                                                .instance
                                                                .agents[i]

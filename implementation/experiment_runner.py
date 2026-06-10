@@ -35,6 +35,17 @@ class ExperimentRunner:
         self.solver = PIBT(dim=self.manager.wall_map.width,
                            seed=GLOBAL_SOLVER_SEED)
 
+    def reset(self):
+        """
+        Reset manager, solver and data buffers.
+        """
+        for i in range(2):
+            self.socs[i].clear()
+            self.makespans[i].clear()
+            self.success_rates[i].clear()
+        self.manager.full_reset_all()
+        self.solver.reset()
+
     def record_success_rate(self) -> None:
         """
         Records the success rate for hazard-aware and hazard-unaware planning
@@ -113,18 +124,19 @@ class ExperimentRunner:
         {"socs": np.array(self.socs),
          "makespans": np.array(self.makespans),
          "success_rates": np.array(self.success_rates),
-         "agents": np.array(list(range(self.manager.get_max_num_agents())))}
-        pickle.dump(data, open(f"{str(EXPERIMENT_RESULTS_DIR)}/" +
-                               f"{self.manager.map_name}_" +
-                               f"{self.even_or_random}_{self.manager.hazard_name}",
-                               "wb"))
+         "agents": np.array(list(range(1, self.manager.get_max_num_agents()+1)))}
+        filepath = (
+            EXPERIMENT_RESULTS_DIR /
+            f"{self.manager.map_name}_{self.even_or_random}_{self.manager.hazard_name}"
+        )
+        pickle.dump(data, open(filepath, "wb"))
 
     def record_and_save_data(self) -> None:
         """
         Runs all experiments, records the results, and saves them to disk.
         """
         self.record_soc_and_makespan()
-        self.record_success_rate()
+        #self.record_success_rate()
         self.save()
 
 if __name__ == "__main__":

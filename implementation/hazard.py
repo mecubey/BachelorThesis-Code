@@ -56,6 +56,7 @@ class Hazard:
     def __init__(self, wall_map: WallMap, config: HazardConfig, seed: int) -> None:
         self.wall_map = wall_map
         self.config = config
+        self.seed = seed
         self.rng = np.random.default_rng(seed)
         self.occupied_tiles: Positions = []
         self.hazard_map = Map(wall_map.width, wall_map.height, "bool")
@@ -148,7 +149,14 @@ class Hazard:
         """
         self.hazard_map.reset()
         self.occupied_tiles.clear()
+        self.reseed(self.seed)
         self.spread_progress = 0
+        
+    def reseed(self, seed: int) -> None:
+        """
+        Reseed hazard RNG.
+        """
+        self.rng = np.random.default_rng(seed)
 
     def progress(self) -> None:
         """

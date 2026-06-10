@@ -5,10 +5,16 @@ tar:
   dirSpreadProbs: [0.2, 0.3, 0.3, 0.2]
 
 syrup:
-  lifetime: 15
+  lifetime: 20
   spawnProb: 0.8
   baseStuckProb: 1
-  dirSpreadProbs: [0.6, 0.5, 0.5, 0.8]
+  dirSpreadProbs: [0.8, 0.7, 0.7, 0.8]
+
+long_syrup:
+  lifetime: 30
+  spawnProb: 0.8
+  baseStuckProb: 1
+  dirSpreadProbs: [0.8, 0.7, 0.7, 0.8]
 
 mud:
   lifetime: 25
@@ -17,10 +23,10 @@ mud:
   dirSpreadProbs: [0.2, 0.3, 0.3, 0.2]
 
 oil:
-  lifetime: 15
+  lifetime: 20
   spawnProb: 0.8
-  baseStuckProb: 0.6
-  dirSpreadProbs: [0.6, 0.5, 0.5, 0.8]
+  baseStuckProb: 0.7
+  dirSpreadProbs: [0.6, 0.5, 0.5, 0.6]
 
 easy:
   lifetime: 7
