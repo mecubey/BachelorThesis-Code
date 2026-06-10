@@ -166,8 +166,8 @@ class Agent:
         self.initial_pos = start_pos
         self.current_pos = start_pos.deepcopy()
         self.goal_pos = goal_pos
-        self.damage = 0
-        self.frozen_for = 0
+        self.damage: float = 0.0
+        self.frozen_for: int = 0
 
     def frozen(self) -> bool:
         """
@@ -188,7 +188,7 @@ class Agent:
         Freeze agent. The more damage an agent has taken,
         the longer it is frozen for.
         """
-        self.frozen_for = self.damage
+        self.frozen_for = int(self.damage)
 
     def increase_damage(self) -> None:
         """
@@ -196,7 +196,7 @@ class Agent:
 
         Damage value is clipped to MAX_DAMAGE.
         """
-        self.damage = min(self.damage+1, MAX_DAMAGE)
+        self.damage = min(self.damage+DAMAGE_INCREASE, MAX_DAMAGE)
 
     def move(self, action: Position) -> None:
         """
@@ -251,6 +251,8 @@ GLOBAL_HAZARD_SEED = 0
 GLOBAL_SOLVER_SEED = 0
 
 MAX_DAMAGE = 10
+
+DAMAGE_INCREASE = 0.2
 
 STAY = Position(0, 0)
 
