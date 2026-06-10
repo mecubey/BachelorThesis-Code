@@ -122,3 +122,11 @@ Walls are black tiles.
 Colored circles are agents, colored crosses are goals. Each agent and its' respective goal have the same color.
 
 ---
+
+
+
+How do you model dynamically spreading hazards (for MAPF)?
+
+How well does HA perform against HUA algorithm?
+
+How do different damage formulations affect the produced plans?

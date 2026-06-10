@@ -1,0 +1,41 @@
+tar:
+  lifetime: 30
+  spawnProb: 0.8
+  baseStuckProb: 1
+  dirSpreadProbs: [0.2, 0.3, 0.3, 0.2]
+
+syrup:
+  lifetime: 15
+  spawnProb: 0.8
+  baseStuckProb: 1
+  dirSpreadProbs: [0.6, 0.5, 0.5, 0.8]
+
+mud:
+  lifetime: 25
+  spawnProb: 0.8
+  baseStuckProb: 0.6
+  dirSpreadProbs: [0.2, 0.3, 0.3, 0.2]
+
+oil:
+  lifetime: 15
+  spawnProb: 0.8
+  baseStuckProb: 0.6
+  dirSpreadProbs: [0.6, 0.5, 0.5, 0.8]
+
+easy:
+  lifetime: 7
+  spawnProb: 0.8
+  baseStuckProb: 0.4
+  dirSpreadProbs: [0.2, 0.3, 0.3, 0.4]
+
+difficult:
+  lifetime: 15
+  spawnProb: 0.8
+  baseStuckProb: 1
+  dirSpreadProbs: [0.8, 0.6, 0.6, 0.8]
+
+test:
+  lifetime: 100
+  spawnProb: 1
+  baseStuckProb: 0.3
+  dirSpreadProbs: [0.5, 0.6, 0.3, 0.8]
