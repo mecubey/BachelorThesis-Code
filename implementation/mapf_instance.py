@@ -2,117 +2,19 @@
 Contains class definition of MAPFInstance and MAPFInstanceManager.
 """
 
-from pathlib import Path
-from copy import deepcopy
 from .hazard import (HazardConfig,
                      Hazard)
 from .wall_map import WallMap
+from .scene import Scene
+from .agent import (Agent,
+                    Agents)
 from .mapf_utils import (Position,
                          Positions,
-                         Agent,
-                         Agents,
-                         MAX_NUM_INSTANCES,
-                         GLOBAL_HAZARD_SEED,
-                         get_scenario_path)
+                         Map,
+                         FRONT_WEIGHT_CUTOFF,
+                         FRONT_WEIGHT_DECREASE)
 from .dist_table import DistTable
 from .path_manager import PathManager
-
-class MAPFInstanceManager:
-    """
-    Represents a manager class for multiple MAPF instances.
-    """
-    def __init__(self, *,
-                 max_timestep: int,
-                 hazard_config: str,
-                 wall_map: WallMap,
-                 even_or_random: str) -> None:
-        self.wall_map: WallMap = wall_map
-        self.instances: list[MAPFInstance] = []
-        self.scene_names: list[str] = []
-
-        for i in range(1, MAX_NUM_INSTANCES+1): # from 1 ... 25
-            self.scene_names.append(f"{wall_map.name}-{even_or_random}-{i}")
-            self.instances.append(MAPFInstance(max_timestep=max_timestep,
-                                               hazard_config=HazardConfig
-                                                             .from_config(hazard_config),
-                                               hazard_seed=GLOBAL_HAZARD_SEED,
-                                               wall_map=self.wall_map,
-
-                                               # from 0 ... 24
-                                               scenario_name=self.scene_names[i-1]))
-
-    @property
-    def hazard_name(self):
-        """
-        Get hazard name.
-        """
-        return self.instances[0].hazard.config.name
-
-    @property
-    def map_name(self):
-        """
-        Get map name.
-        """
-        return self.wall_map.name
-
-    def full_reset_all(self) -> None:
-        """
-        Fully reset all managed instances.
-        """
-        for inst in self.instances:
-            inst.full_reset()
-
-    def change_hazard_configs(self, new_config: str) -> None:
-        """
-        Change hazard configs of all managed instances.
-
-        Args:
-            new_config (HazardConfig): New config.
-        """
-        for inst in self.instances:
-            inst.change_hazard_config(HazardConfig.from_config(new_config))
-
-    def get_scene_name(self, i: int) -> str:
-        """
-        Get the name of the specified scene.
-
-        Args:
-            i (int): Index of the scene.
-
-        Returns:
-            str: Name of the scene.
-        """
-        return self.scene_names[i]
-
-    def get_max_timestep(self) -> int:
-        """
-        Get the maximum timestep configured for the managed instances.
-
-        Returns:
-            int: Maximum timestep.
-        """
-        return self.instances[0].max_timestep
-
-    def get_max_num_agents(self) -> int:
-        """
-        Get the maximum number of agents supported by the managed instances.
-
-        Returns:
-            int: Maximum number of agents.
-        """
-        return self.instances[0].max_num_agents
-
-    def deepcopy_instance(self, i: int) -> MAPFInstance:
-        """
-        Create a deep copy of the specified instance.
-
-        Args:
-            i (int): Index of the instance.
-
-        Returns:
-            MAPFInstance: Deep copy of the selected instance.
-        """
-        return deepcopy(self.instances[i])
 
 class MAPFInstance:
     """
@@ -123,43 +25,34 @@ class MAPFInstance:
                  hazard_config: HazardConfig,
                  hazard_seed: int,
                  wall_map: WallMap,
-                 scenario_name: str) -> None:
+                 scene: Scene) -> None:
         self.wall_map = wall_map
         self.hazard = Hazard(self.wall_map, hazard_config, hazard_seed)
         self.timestep: int = 0
         self.max_timestep: int = max_timestep
         self.agents: Agents = []
         self.num_agents: int = 0
+        self.scene = scene
+        self.path_manager = PathManager(scene.max_num_agents)
 
-        # these should never change for a single MAPF instance
-        self.all_start_positions: Positions = []
-        self.all_goal_positions: Positions = []
-        self.all_dist_tables: list[DistTable] = []
-        self.all_optimal_path_lenghts: list[float] = []
-        self.max_num_agents: int = 0
+    def change_scene(self, scene: Scene):
+        """
+        Change scene.
 
-        path_to_scene = Path(get_scenario_path(scenario_name))
+        Args:
+            scene (Scene): New scene.
+        """
+        self.scene = scene
 
-        # read scenario file
-        with path_to_scene.open("r", encoding="utf-8") as f:
-            for line in f:
-                line = line.strip()
+    def move_all_agents(self, actions: Positions):
+        """
+        Move all agents according to actions.
 
-                if not line or line.startswith("version"):
-                    continue
-
-                parts = line.split()
-
-                start = Position(int(parts[5]), int(parts[4]))
-                goal = Position(int(parts[7]), int(parts[6]))
-
-                self.all_start_positions.append(start)
-                self.all_goal_positions.append(goal)
-                table = DistTable(self.wall_map, goal)
-                self.all_dist_tables.append(table)
-                self.all_optimal_path_lenghts.append(table.get(start))
-        self.max_num_agents = len(self.all_start_positions)
-        self.path_manager = PathManager(self.max_num_agents)
+        Args:
+            actions (Positions): List of next actions.
+        """
+        for i, agent in enumerate(self.agents):
+            agent.move(actions[i])
 
     def change_hazard_config(self, new_config: HazardConfig) -> None:
         """
@@ -182,53 +75,77 @@ class MAPFInstance:
         """
         return self.succeeded() or self.max_timestep_reached()
 
+    def calc_cost_map(self) -> Map:
+        """
+        Calculates the hazard cost map.
+        """
+        cost_map: Map = Map(self.wall_map.width,
+                            self.wall_map.height,
+                            "float")
+
+        visited: set[Position] = set()
+        front: set[Position] = set()
+
+        # we first set the hazard tiles we can see
+        for pos in self.hazard.occupied_tiles:
+            visited.add(pos)
+            for u in self.wall_map.neighbour_table[pos]:
+                if u is None or u in self.hazard.occupied_tiles:
+                    continue
+                front.add(u)
+            cost_map[pos] = 1
+
+        front_weight: float = 1
+        front_iter: int = 0
+
+        # then, we calculate costs for each cell
+        while front_iter < FRONT_WEIGHT_CUTOFF and front:
+            next_front: set[Position] = set()
+            looked_at_front: set[Position] = set()
+
+            while front:
+                pos = front.pop()
+
+                no_spread_prob: float = 1
+                for i, u in enumerate(self.wall_map.neighbour_table[pos]):
+                    if u is None or u in front or u in looked_at_front:
+                        continue
+
+                    if u not in visited:
+                        next_front.add(u)
+                        continue
+
+                    no_spread_prob *= (1-cost_map[u]*self.hazard.config.dir_spread_probs[i-2])
+                cost_map[pos] = front_weight * (1 - no_spread_prob)
+
+                looked_at_front.add(pos)
+
+            visited.update(looked_at_front)
+            front_iter += 1
+            front_weight = front_weight*(1-FRONT_WEIGHT_DECREASE)
+            front = next_front
+
+        return cost_map
+
     def hazard_step(self) -> None:
         """
-        Advance the hazard simulation by one step.
-
-        If no hazard is currently active, an attempt is made to spawn a new
-        hazard. Otherwise, the existing hazard is spread. Once the configured
-        spread limit is reached, the hazard is reset.
+        Advance the hazard simulation by one step. 
         """
-        if self.hazard.empty() and self.hazard.spawn():
-            return
+        self.hazard.step()
 
-        self.hazard.spread()
+        for agent in self.agents:
+            agent.decay_freeze()
+            if not self.hazard.on_hazard(agent.current_pos):
+                agent.decay_dmg()
+                continue
 
-        if self.hazard.done():
-            self.hazard.reset()
+            # now we know agent is on hazard tile
+            agent.increase_damage()
 
-    def calc_optimal_makespan(self, for_n_agents: int) -> float:
-        """
-        Calculate the optimal makespan for the first n agents.
+            if self.hazard.is_stuck(agent.current_pos):
+                agent.freeze()
 
-        The makespan is defined as the maximum optimal path length among the
-        specified agents.
-
-        Args:
-            for_n_agents (int): Number of agents to consider.
-
-        Returns:
-            float: Optimal makespan.
-        """
-        return max(self.all_optimal_path_lenghts[:for_n_agents])
-
-    def calc_optimal_soc(self, for_n_agents: int) -> float:
-        """
-        Calculate the optimal sum of costs for the first n agents.
-
-        Args:
-            for_n_agents (int): Number of agents to consider.
-
-        Returns:
-            float: Sum of optimal path lengths.
-        """
-        soc: float = 0
-        for i in range(for_n_agents):
-            soc += self.all_optimal_path_lenghts[i]
-        return soc
-
-    def episode_progress(self) -> float:
+    def get_episode_progress(self) -> float:
         """
         Return episode progress.
 
@@ -246,26 +163,19 @@ class MAPFInstance:
     def full_reset(self) -> None:
         """
         Reset the instance to its initial state and remove all agents.
-        Should be called when changing configs.
-
-        All agents are removed and hazards are reset and the timestep counter is set to zero.
         """
         self.agents.clear()
         self.num_agents = 0
-        self.hazard.reset()
-        self.path_manager.reset()
-        self.timestep = 0
+        self.reset()
 
     def reset(self) -> None:
         """
-        Reset the instance to its initial state. Should be called
-        when starting a new episode.
-
-        All agents and hazards are reset and the timestep counter is set to zero.
+        Reset the instance to its initial state.
         """
         for agent in self.agents:
             agent.reset()
         self.hazard.reset()
+        self.hazard.reseed(self.hazard.seed)
         self.path_manager.reset()
         self.timestep = 0
 
@@ -276,14 +186,15 @@ class MAPFInstance:
         The agent's start position, goal position, distance table, and initial
         priority are taken from the preloaded scenario data.
         """
-        new_start_pos: Position = self.all_start_positions[self.num_agents]
-        new_goal_pos: Position = self.all_goal_positions[self.num_agents]
-        new_dist_table: DistTable = self.all_dist_tables[self.num_agents]
-        new_priority: float = new_dist_table.get(new_start_pos) /self.wall_map.width
+        new_start_pos: Position = self.scene.all_start_positions[self.num_agents]
+        new_goal_pos: Position = self.scene.all_goal_positions[self.num_agents]
+        new_dist_table: DistTable = self.scene.all_dist_tables[self.num_agents]
+        new_priority: float = new_dist_table.get(new_start_pos) / self.wall_map.width
         self.agents.append(Agent(i=self.num_agents,
                                  priority=new_priority,
                                  start_pos=new_start_pos,
-                                 goal_pos=new_goal_pos))
+                                 goal_pos=new_goal_pos,
+                                 hazard=self.hazard))
         self.num_agents += 1
 
     def succeeded(self) -> bool:
@@ -298,6 +209,21 @@ class MAPFInstance:
             num_agents_on_goal += agent.on_goal()
         return num_agents_on_goal == self.num_agents
 
+    def any_collisions(self) -> bool:
+        """
+        Check for collisions.
+
+        Returns:
+            bool: True if any agents are colliding, False otherwise.
+        """
+        for agent_i in self.agents:
+            for agent_j in self.agents:
+                if agent_i.id == agent_j.id:
+                    continue
+                if agent_i.current_pos == agent_j.current_pos:
+                    return True
+        return False
+
     def max_timestep_reached(self) -> bool:
         """
         Check whether the maximum allowed timestep has been reached.
@@ -307,48 +233,3 @@ class MAPFInstance:
             maximum timestep, False otherwise.
         """
         return self.timestep >= self.max_timestep
-
-
-if __name__ == "__main__":
-    #from pibt import PIBT
-    #from mapf_visualizer import MAPFVisualizer
-
-    manager = MAPFInstanceManager(max_timestep=100,
-                                  hazard_config="easy",
-                                  wall_map=WallMap("empty-8-8"),
-                                  even_or_random="even")
-
-    instance = manager.instances[0]
-
-    for _ in range(10):
-        instance.add_agent()
-
-    #visualizer = MAPFVisualizer(instance)
-
-    #solver = PIBT(dim=instance.wall_map.width,
-    #              seed=0)
-    #solver.set_instance(instance)
-    #solver.set_hazard_awareness(True)
-    #solver.reset()
-
-    #visualizer.render()
-    input()
-
-    #print(instance.num_agents)
-
-    #solver.consider_hazards = False
-
-    while True:
-        instance.hazard_step()
-        #solver.step()
-        #visualizer.render()
-        print([a.memory.estimation for a in instance.agents])
-        input()
-
-        if instance.finished():
-            print(f"success: {instance.succeeded()}")
-            print(f"soc: {instance.path_manager.calc_soc() / \
-                          instance.calc_optimal_soc(instance.num_agents)}")
-            print(f"makespan: {instance.path_manager.calc_makespan() / \
-                               instance.calc_optimal_makespan(instance.num_agents)}")
-            break

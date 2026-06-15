@@ -1,47 +1,62 @@
-tar:
-  lifetime: 30
-  spawnProb: 0.8
-  baseStuckProb: 1
-  dirSpreadProbs: [0.2, 0.3, 0.3, 0.2]
+# large, persistent hazard regions
+Slowfire:
+  spawnProb: 1
+  baseStuckProb: 0.35
+  dirSpreadProbs: [0.8, 0.8, 0.8, 0.8]
+  growthTime: 10
+  stableTime: 16
+  add_damage_increase: 0.6
+  add_damage_decrease: 0.2
+  mult_damage_increase: 0.3
+  mult_damage_decrease: 0.12
 
-syrup:
-  lifetime: 20
-  spawnProb: 0.8
-  baseStuckProb: 1
-  dirSpreadProbs: [0.8, 0.7, 0.7, 0.8]
-
-long_syrup:
-  lifetime: 30
-  spawnProb: 0.8
-  baseStuckProb: 1
-  dirSpreadProbs: [0.8, 0.7, 0.7, 0.8]
-
-mud:
-  lifetime: 25
-  spawnProb: 0.8
+# dangerous directional fronts
+Wildfire:
+  spawnProb: 1
   baseStuckProb: 0.6
-  dirSpreadProbs: [0.2, 0.3, 0.3, 0.2]
+  dirSpreadProbs: [0.95, 0.8, 0.25, 0.1]
+  growthTime: 10
+  stableTime: 14
+  add_damage_increase: 0.8
+  add_damage_decrease: 0.3
+  mult_damage_increase: 0.35
+  mult_damage_decrease: 0.1
 
-oil:
-  lifetime: 20
+# hazard appears everywhere frequently but remains localized
+Minefield:
+  spawnProb: 1
+  baseStuckProb: 0.8
+  dirSpreadProbs: [0.6, 0.5, 0.8, 0.8]
+  growthTime: 6
+  stableTime: 11
+  add_damage_increase: 1.4
+  add_damage_decrease: 0.4
+  mult_damage_increase: 0.4
+  mult_damage_decrease: 0.09
+
+additive_easy:
+  spawnProb: 1
+  baseStuckProb: 0.4
+  dirSpreadProbs: [0.5, 0.4, 0.4, 0.2]
+  growthTime: 3
+  stableTime: 2
+  damage_increase: 0.4
+  damage_decrease: 0.1
+
+additive_difficult:
   spawnProb: 0.8
   baseStuckProb: 0.7
-  dirSpreadProbs: [0.6, 0.5, 0.5, 0.6]
-
-easy:
-  lifetime: 7
-  spawnProb: 0.8
-  baseStuckProb: 0.4
-  dirSpreadProbs: [0.2, 0.3, 0.3, 0.4]
-
-difficult:
-  lifetime: 15
-  spawnProb: 0.8
-  baseStuckProb: 1
-  dirSpreadProbs: [0.8, 0.6, 0.6, 0.8]
+  dirSpreadProbs: [0.8, 0.9, 0.67, 0.7]
+  growthTime: 10
+  stableTime: 15
+  damage_increase: 0.6
+  damage_decrease: 0.2
 
 test:
-  lifetime: 100
   spawnProb: 1
-  baseStuckProb: 0.3
+  baseStuckProb: 1
+  growthTime: 3
+  stableTime: 3
   dirSpreadProbs: [0.5, 0.6, 0.3, 0.8]
+  damage_increase: 1
+  damage_decrease: 0.3

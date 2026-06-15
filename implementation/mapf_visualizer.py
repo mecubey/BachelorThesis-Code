@@ -4,8 +4,8 @@ Contains MAPFVisualizer class definition.
 
 import numpy as np
 import matplotlib.pyplot as plt
-from mapf_instance import MAPFInstance
-from mapf_utils import Position
+from .mapf_instance import MAPFInstance
+from .mapf_utils import Position
 
 class MAPFVisualizer:
     """

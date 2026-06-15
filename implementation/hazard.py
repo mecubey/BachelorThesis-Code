@@ -6,10 +6,11 @@ from dataclasses import dataclass
 import yaml
 import numpy as np
 from .wall_map import WallMap
-from .mapf_utils import (Positions,
-                        Position,
-                        Map,
-                        HAZARD_CONFIGS)
+from .mapf_utils import (Position,
+                         Map,
+                         HazardType,
+                         HAZARD_CONFIGS,
+                         MAX_DAMAGE)
 
 @dataclass
 class HazardConfig:
@@ -17,10 +18,15 @@ class HazardConfig:
     Represents a hazard config.
     """
     name: str
-    lifetime: int
     spawn_prob: float
     base_stuck_prob: float
     dir_spread_probs: list[float]
+    add_damage_increase: float
+    add_damage_decrease: float
+    mult_damage_increase: float
+    mult_damage_decrease: float
+    growth_time: int
+    stable_time: int
 
     @staticmethod
     def from_config(name: str) -> HazardConfig:
@@ -31,7 +37,7 @@ class HazardConfig:
             name (str): Name of hazard config.
 
         Returns:
-            HazardConfig: Contents of the hazard config as HazardConfig object.
+            HazardConfig: Contents of the hazard config as a HazardConfig object.
         """
         with HAZARD_CONFIGS.open("r", encoding="utf-8") as f:
             data = yaml.safe_load(f)
@@ -43,10 +49,15 @@ class HazardConfig:
 
         return HazardConfig(
             name=name,
-            lifetime=cfg["lifetime"],
             spawn_prob=cfg["spawnProb"],
             base_stuck_prob=cfg["baseStuckProb"],
             dir_spread_probs=cfg["dirSpreadProbs"],
+            add_damage_increase=cfg["add_damage_increase"],
+            add_damage_decrease=cfg["add_damage_decrease"],
+            mult_damage_increase=cfg["mult_damage_increase"],
+            mult_damage_decrease=cfg["mult_damage_decrease"],
+            growth_time=cfg["growthTime"],
+            stable_time=cfg["stableTime"]
         )
 
 class Hazard:
@@ -58,99 +69,110 @@ class Hazard:
         self.config = config
         self.seed = seed
         self.rng = np.random.default_rng(seed)
-        self.occupied_tiles: Positions = []
+        self.occupied_tiles: set[Position] = set()
+        self.fronts: list[set[Position]] = []
         self.hazard_map = Map(wall_map.width, wall_map.height, "bool")
         self.spread_progress = 0
+        self.stable_progress = 0
+        self.hzd_type = HazardType.ADDITIVE
 
-    def spread(self):
+    def change_hzd_type(self, new_type: HazardType):
+        """
+        Change hazard type (ADDITIVE or MULTIPLICATIVE.)
+        """
+        self.hzd_type = new_type
+
+    def step(self):
+        """
+        Step through hazard.
+        """
+        if len(self.occupied_tiles) == 0:
+            self.spawn()
+            return
+
+        done_spreading = self.spread_progress >= self.config.growth_time
+
+        if not done_spreading:
+            self.spread()
+            self.spread_progress += 1
+            return
+
+        # we finished spreading, so now we stabilize
+        done_stable = self.stable_progress >= self.config.stable_time
+
+        if done_stable:
+            last_front = self.fronts.pop()
+            for pos in last_front:
+                self.hazard_map[pos] = False
+
+            self.occupied_tiles.difference_update(last_front)
+
+            if len(self.occupied_tiles) == 0:
+                self.reset()
+                return
+
+        self.stable_progress += 1
+
+    def spread(self) -> None:
         """
         Spread the hazard from currently occupied tiles to neighbouring tiles.
 
-        For each occupied tile, this method checks all neighbouring tiles and
-        probabilistically expands the hazard based on the directional spread
-        probabilities. Newly infected tiles are collected and added after the
-        iteration completes. If any spread occurs, the progression counter is
-        advanced.
+        Returns:
+            Positions: All the directions this hazard spread towards.
         """
-        newly_occupied_tiles: Positions = []
+        assert len(self.occupied_tiles) > 0
+
+        newly_occupied_tiles: set[Position] = set()
         for pos in self.occupied_tiles:
             neighbours = self.wall_map.neighbour_table[pos]
             for i, neighbour in enumerate(neighbours):
                 if (neighbour is None or
-                    self.on_hazard(neighbour) or
-                    self.rng.random() > self.config.dir_spread_probs[i]):
+                    self.on_hazard(neighbour)):
                     continue
-                newly_occupied_tiles.append(neighbour)
+
+                if self.rng.random() > self.config.dir_spread_probs[i]:
+                    continue
+
+                newly_occupied_tiles.add(neighbour)
                 self.hazard_map[neighbour] = True
-        self.occupied_tiles.extend(newly_occupied_tiles)
+        self.occupied_tiles.update(newly_occupied_tiles)
+        self.fronts.append(newly_occupied_tiles)
 
-        self.progress()
-
-    def spawn(self) -> bool:
+    def spawn(self) -> None:
         """
         Attempt to spawn a new hazard on a random free tile.
-
-        A tile is selected uniformly at random from all free tiles. The spawn
-        succeeds based on the configured spawn probability. If successful, the
-        tile becomes occupied and the simulation progress is advanced.
 
         Returns:
             bool: True if a new hazard was spawned, False otherwise.
         """
+        assert len(self.occupied_tiles) == 0
+
         if self.rng.random() > self.config.spawn_prob:
-            return False
+            return
         idx = self.rng.integers(len(self.wall_map.free_tiles))
         spawn_pos: Position = self.wall_map.free_tiles[idx]
-        self.occupied_tiles.append(spawn_pos)
+        self.occupied_tiles.add(spawn_pos)
+        self.fronts.append(set([spawn_pos]))
         self.hazard_map[spawn_pos] = True
-        self.progress()
-        return True
-
-    def empty(self) -> bool:
-        """
-        Check whether there are currently no active hazard tiles.
-
-        Returns:
-            bool: True if no tiles are occupied by hazards, False otherwise.
-        """
-        return len(self.occupied_tiles) == 0
-
-    def done(self) -> bool:
-        """
-        Check whether the hazard simulation has reached its maximum spread limit.
-
-        Returns:
-            bool: True if the spread progression has reached the configured limit,
-            False otherwise.
-        """
-        return self.spread_progress >= self.config.lifetime
 
     def is_stuck(self, pos: Position) -> bool:
         """
         Determine whether a given position becomes stuck
         through the hazard.
-
-        Args:
-            pos (Position): Position to evaluate.
-
-        Returns:
-            bool: True if the position is stuck, False otherwise.
         """
-        if self.rng.random() < self.calc_stuck_prob(pos):
+        if self.on_hazard(pos) and self.rng.random() < self.config.base_stuck_prob:
             return True
         return False
 
     def reset(self) -> None:
         """
-        Reset the hazard simulation state.
-
-        Clears all occupied tiles, resets the hazard map, and resets the
-        spread progression counter.
+        Reset the hazard simulation.
         """
         self.hazard_map.reset()
         self.occupied_tiles.clear()
-        self.reseed(self.seed)
+        self.fronts.clear()
         self.spread_progress = 0
+        self.stable_progress = 0
 
     def reseed(self, seed: int) -> None:
         """
@@ -158,51 +180,46 @@ class Hazard:
         """
         self.rng = np.random.default_rng(seed)
 
-    def progress(self) -> None:
+    def calculate_decreased_dmg(self, prev_dmg: float) -> float:
         """
-        Advance the internal spread progression counter by one step.
+        Calculate the next decreased hazard damage based on the current taken damage.
         """
-        self.spread_progress += 1
+        # for now, only additive
+        match(self.hzd_type):
+            case HazardType.ADDITIVE:
+                return max(prev_dmg-self.config.add_damage_decrease, 0)
+            case HazardType.MULTIPLICATIVE:
+                return prev_dmg*(1-self.config.mult_damage_decrease)
+
+    def calculate_increased_dmg(self, prev_dmg: float) -> float:
+        """
+        Calculate the next increased hazard damage based on the current taken damage.
+        """
+        # for now, only additive
+        match(self.hzd_type):
+            case HazardType.ADDITIVE:
+                return min(prev_dmg+self.config.add_damage_increase, MAX_DAMAGE)
+            case HazardType.MULTIPLICATIVE:
+                return min(prev_dmg*(1+self.config.mult_damage_increase), MAX_DAMAGE)
 
     def on_hazard(self, pos: Position):
         """
         Check whether a given position is currently marked as a hazard tile.
-
-        Args:
-            pos (Position): Position to check.
-
-        Returns:
-            bool: True if the position is currently a hazard, False otherwise.
         """
         return self.hazard_map[pos]
 
-    def calc_stuck_prob(self, pos: Position) -> float:
-        """
-        Calculate te probability of getting stuck on this tile.
-
-        Args:
-            pos (Position): Position to be checkded.
-
-        Returns:
-            _type_: Probabibility of getting stuck. 0 if pos is not a hazard tile.
-        """
-        if not self.on_hazard(pos):
-            return 0
-        return self.config.base_stuck_prob
-
 if __name__ == "__main__":
-    test_config = HazardConfig.from_config("test")
+    from pprint import pprint
+
+    test_config = HazardConfig.from_config("additive_easy")
 
     test_map = WallMap("empty-8-8")
 
     hazard = Hazard(test_map, test_config, 0)
 
-    hazard.spawn()
+    hazard.step()
 
     while True:
-        for row in range(hazard.hazard_map.width):
-            for col in range(hazard.hazard_map.height):
-                print(f"{hazard.hazard_map[Position(row, col)]} ", end="")
-            print()
+        hazard.step()
+        pprint(hazard.hazard_map.tiles.reshape(8, 8).astype(int))
         input()
-        hazard.spread()

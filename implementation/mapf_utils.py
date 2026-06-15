@@ -2,21 +2,17 @@
 Contains various utility methods, classes, constants, types.
 """
 
-import math
 from enum import Enum, StrEnum
 from pathlib import Path
-from copy import deepcopy
 import numpy as np
-from .memory import Memory
 
 # classes
 class HazardType(StrEnum):
     """
     Specifies hazard type.
-
-    CONSTANT - the probability of getting stuck stays the same
     """
-    CONSTANT = "constant"
+    ADDITIVE = "additive"
+    MULTIPLICATIVE = "multiplicative"
 
 class Direction(Enum):
     """
@@ -38,11 +34,8 @@ class Position:
     def deepcopy(self) -> Position:
         """
         Return a deep copy of this position.
-
-        Note that does everything (besides primitives) by-reference,
-        so sometimes you need to copy.
         """
-        return deepcopy(self)
+        return Position(self.x, self.y)
 
     def as_ndarray(self):
         """
@@ -65,24 +58,6 @@ class Position:
         self.x -= other.x
         self.y -= other.y
         return self
-
-    def euclidean(self) -> float:
-        """
-        Return euclidean distance.
-
-        Returns:
-            float: Euclidean distance.
-        """
-        return math.sqrt(self.x * self.x + self.y * self.y)
-
-    def manhattan(self) -> float:
-        """
-        Return manhattan distance.
-
-        Returns:
-            float: Manhattan distance.
-        """
-        return abs(self.x) + abs(self.y)
 
     def __iter__(self):
         yield self.x
@@ -120,6 +95,9 @@ class Map:
         if cell_type == "int":
             self.tiles = np.zeros(width * height, dtype=np.int_)
 
+        if cell_type == "float":
+            self.tiles = np.zeros(width * height, dtype=np.double)
+
         self.reset()
 
     def reset(self):
@@ -129,8 +107,11 @@ class Map:
         if self.cell_type == "bool":
             self.tiles.fill(False)
 
-        if self.cell_type == "int":
+        if self.cell_type  == "int":
             self.tiles.fill(INVALID_AGENT_ID)
+
+        if self.cell_type == "float":
+            self.tiles.fill(0)
 
     def inside(self, pos: Position):
         """
@@ -147,112 +128,40 @@ class Map:
     def __getitem__(self, pos: Position):
         return self.tiles[pos.x * self.width + pos.y]
 
-    def __setitem__(self, pos: Position, value: bool|int):
+    def __setitem__(self, pos: Position, value: bool|int|float):
         self.tiles[pos.x * self.width + pos.y] = value
-
-class Agent:
-    """
-    Represents an agent.
-    """
-    def __init__(self, *,
-                i: int,
-                priority: float,
-                start_pos: Position,
-                goal_pos: Position) -> None:
-        self.id = i
-        self.memory = Memory()
-        self.initial_priority = priority
-        self.current_priority = priority
-        self.initial_pos = start_pos
-        self.current_pos = start_pos.deepcopy()
-        self.goal_pos = goal_pos
-        self.damage: float = 0.0
-        self.frozen_for: int = 0
-
-    def frozen(self) -> bool:
-        """
-        Check if agent is frozen.
-
-        If an agent is frozen, then it cannot move.
-        """
-        return self.frozen_for > 0
-
-    def decay_freeze(self) -> None:
-        """
-        Decrease the freeze time by 1.
-        """
-        self.frozen_for = max(self.frozen_for-1, 0)
-
-    def freeze(self) -> None:
-        """
-        Freeze agent. The more damage an agent has taken,
-        the longer it is frozen for.
-        """
-        self.frozen_for = int(self.damage)
-
-    def increase_damage(self) -> None:
-        """
-        Increase damage of this agent by 1.
-
-        Damage value is clipped to MAX_DAMAGE.
-        """
-        self.damage = min(self.damage+DAMAGE_INCREASE, MAX_DAMAGE)
-
-    def move(self, action: Position) -> None:
-        """
-        Move agent accordin to action.
-
-        Args:
-            action (Position): Action agent should take.
-        """
-        self.current_pos += action
-
-    def on_goal(self) -> bool:
-        """
-        Check if agent is on its goal.
-
-        Returns:
-            bool: True if agent is on its goal, False otherwise.
-        """
-        return self.current_pos == self.goal_pos
-
-    def reset(self) -> None:
-        """
-        Reset position and priority of agent.
-        """
-        self.damage = 0
-        self.frozen_for = 0
-        self.current_priority = self.initial_priority
-        self.current_pos = self.initial_pos.deepcopy()
-        self.memory.reset()
-
-Agents = list[Agent]
 
 # constants
 BASE_DIR = Path(__file__).resolve().parent.parent
 MAPS_DIR = BASE_DIR / "maps"
 SCENE_DIR = BASE_DIR / "scenarios"
 HAZARD_CONFIGS = BASE_DIR / "configs" / "hazard_configs.yaml"
-EXPERIMENT_RESULTS_DIR = BASE_DIR / "experiments" / "results"
+EXPERIMENT_DIR = BASE_DIR / "experiments"
 
 DIR_TO_POS: dict[Direction, Position] = {Direction.UP: Position(-1, 0),
                                          Direction.RIGHT: Position(0, 1),
                                          Direction.DOWN: Position(1, 0),
                                          Direction.LEFT: Position(0, -1)}
 
-CELL_TYPES = ["bool", "int"]
+CELL_TYPES = ["bool", "int", "float"]
 
 INVALID_AGENT_ID = -1
 
-MAX_NUM_INSTANCES = 25
+INVALID_POSITION = Position(-1, -1)
+
+MAX_NUM_SCENES = 25
 
 GLOBAL_HAZARD_SEED = 0
 
 GLOBAL_SOLVER_SEED = 0
 
-MAX_DAMAGE = 10
+FRONT_WEIGHT_DECREASE = 0.1
 
-DAMAGE_INCREASE = 0.2
+FRONT_WEIGHT_CUTOFF = 10
+
+BASE_DAMAGE = 0.1
+
+MAX_DAMAGE = 10
 
 STAY = Position(0, 0)
 
@@ -260,21 +169,7 @@ STAY = Position(0, 0)
 Positions = list[Position]
 
 # methods
-def scene_to_path(scene_name: str) -> str:
-    """
-    Transform a scenario name into a path relative to the scenario folder.
-
-    Args:
-        scene_name (str): Name of scenario.
-
-    Returns:
-        str: Path inside scenario folder to that scenario.
-    """
-    map_name, scenetype, scene_id = scene_name.rsplit("-", 2)
-
-    return f"{map_name}/scen-{scenetype}/{map_name}-{scenetype}-{scene_id}"
-
-def get_scenario_path(scenario_name: str) -> str:
+def get_scenario_path(scenario_name: str) -> Path:
     """
     Get the path of a scenario.
 
@@ -287,14 +182,15 @@ def get_scenario_path(scenario_name: str) -> str:
     Returns:
         str: Path to the scenario.
     """
-    path = SCENE_DIR / f"{scene_to_path(scenario_name)}.scen"
+    map_name, scenetype, scene_id = scenario_name.rsplit("-", 2)
+    path = SCENE_DIR / f"{map_name}/scen-{scenetype}/{map_name}-{scenetype}-{scene_id}.scen"
 
     if not path.exists():
         raise FileNotFoundError(f"Scenario not found: {scenario_name}")
 
-    return str(path)
+    return path
 
-def get_map_path(map_name: str) -> str:
+def get_map_path(map_name: str) -> Path:
     """
     Get the path of a map.
 
@@ -312,4 +208,4 @@ def get_map_path(map_name: str) -> str:
     if not path.exists():
         raise FileNotFoundError(f"Map not found: {map_name}")
 
-    return str(path)
+    return path

@@ -4,11 +4,15 @@ Contains class definition of ExperimentRunner.
 
 import pickle
 from typing import Any
+from statistics import mean
 import numpy as np
-from .mapf_instance import MAPFInstanceManager
-from .mapf_utils import (EXPERIMENT_RESULTS_DIR,
+from .mapf_instance import MAPFInstance
+from .mapf_utils import (EXPERIMENT_DIR,
                          GLOBAL_SOLVER_SEED,
-                         MAX_NUM_INSTANCES)
+                         GLOBAL_HAZARD_SEED,
+                         MAX_NUM_SCENES)
+from .scene import SceneManager
+from .hazard import HazardConfig
 from .wall_map import WallMap
 from .pibt import PIBT
 
@@ -22,128 +26,128 @@ class ExperimentRunner:
                  max_timestep: int,
                  hazard_config: str,
                  wall_map: WallMap,
+                 max_agents: int,
+                 agent_size_step: int,
                  even_or_random: str) -> None:
-        self.socs: list[list[float]] = [[], []]
-        self.makespans: list[list[float]] = [[], []]
+        self.optimal_socs: list[list[float]] = [[], []]
+        self.raw_socs: list[list[float]] = [[], []]
+        self.optimal_makespans: list[list[float]] = [[], []]
+        self.raw_makespans: list[list[float]] = [[], []]
         self.success_rates: list[list[float]] = [[], []]
+
+        self.max_agents = max_agents
+        self.agent_size_step = agent_size_step
         self.even_or_random = even_or_random
-        self.manager = MAPFInstanceManager(max_timestep=max_timestep,
-                                           hazard_config=hazard_config,
-                                           wall_map=wall_map,
-                                           even_or_random=even_or_random)
-        self.solver = PIBT(dim=self.manager.wall_map.width,
+        self.scene_manager = SceneManager(wall_map=wall_map,
+                                          n_scenes=MAX_NUM_SCENES,
+                                          even_or_random=even_or_random)
+        self.instance = MAPFInstance(max_timestep=max_timestep,
+                                     hazard_config=HazardConfig.from_config(hazard_config),
+                                     hazard_seed=GLOBAL_HAZARD_SEED,
+                                     wall_map=wall_map,
+                                     scene=self.scene_manager.scenes[0])
+        self.solver = PIBT(width=wall_map.width,
+                           height=wall_map.height,
                            seed=GLOBAL_SOLVER_SEED)
+        self.solver.set_instance(self.instance)
 
     def reset(self):
         """
-        Reset manager, solver and data buffers.
+        Reset instance, solver and data buffers.
         """
         for i in range(2):
-            self.socs[i].clear()
-            self.makespans[i].clear()
+            self.optimal_socs[i].clear()
+            self.raw_socs[i].clear()
+            self.optimal_makespans[i].clear()
+            self.raw_makespans[i].clear()
             self.success_rates[i].clear()
-        self.manager.full_reset_all()
+        self.instance.full_reset()
         self.solver.reset()
 
-    def record_success_rate(self) -> None:
+    def change_hazard_config(self, config: str) -> None:
         """
-        Records the success rate for hazard-aware and hazard-unaware planning
-        over all instances and agent counts.
+        Change current hazard config of this runner.
+
+        Args:
+            config (str): New config.
         """
-        for _ in range(self.manager.get_max_num_agents()):
-            tmp_successes: list[list[int]] = [[], []]
+        self.instance.change_hazard_config(HazardConfig.from_config(config))
 
-            for instance in self.manager.instances:
-                self.solver.set_instance(instance)
-                instance.add_agent()
-                for hzd_type in range(2):
-                    if hzd_type == 0:
-                        self.solver.set_hazard_awareness(False)
-                    else:
-                        self.solver.set_hazard_awareness(True)
+    def record_data(self) -> None:
+        """
+        Records data for one set of plots.
+        """
+        for agent_count in range(self.agent_size_step, self.max_agents+1, self.agent_size_step):
+            tmp_optimal_socs: list[list[float]] = [[], []]
+            tmp_raw_socs: list[list[float]] = [[], []]
+            tmp_optimal_makespans: list[list[float]] = [[], []]
+            tmp_raw_makespans: list[list[float]] = [[], []]
+            tmp_success_rates: list[list[float]] = [[], []]
+            for i in range(MAX_NUM_SCENES):
+                self.instance.full_reset()
+                self.instance.change_scene(self.scene_manager.scenes[i])
+                for _ in range(agent_count):
+                    self.instance.add_agent()
 
-                    instance.reset()
+                for hzd_type in [False, True]:
+                    self.solver.set_hazard_awareness(hzd_type)
+
+                    self.instance.reset()
                     self.solver.reset()
 
-                    while not instance.finished():
-                        instance.hazard_step()
-                        self.solver.step()
+                    while not self.instance.finished():
+                        self.instance.hazard_step()
+                        self.instance.move_all_agents(self.solver.step())
+                        self.instance.progress()
 
-                    tmp_successes[hzd_type].append(int(instance.succeeded()))
+                    if self.instance.succeeded():
+                        soc = self.instance.path_manager.calc_soc()
+                        makespan = self.instance.path_manager.calc_makespan()
+                        tmp_raw_socs[hzd_type].append(soc)
+                        tmp_raw_makespans[hzd_type].append(makespan)
 
-            # now we calculate success rate for a given num_agent
-            for i in range(2):
-                self.success_rates[i].append(sum(tmp_successes[i]) / MAX_NUM_INSTANCES)
+                        rel_optimal_soc = soc / self.instance.scene.calc_optimal_soc(agent_count)
+                        rel_optimal_makespan = (makespan /
+                                                self.instance.scene
+                                                .calc_optimal_makespan(agent_count))
+                        tmp_optimal_socs[hzd_type].append(rel_optimal_soc)
+                        tmp_optimal_makespans[hzd_type].append(rel_optimal_makespan)
 
-    def record_soc_and_makespan(self) -> None:
-        """
-        Records normalized SoC and makespan for hazard-aware and hazard-unaware
-        planning on a single instance across different agent counts.
-        """
-        # first, we record socs and makespan
-        # we add one agent, test HA & HUA, record, then add another agent, ...
-        # this we do only for the first instance
+                    tmp_success_rates[hzd_type].append(self.instance.succeeded())
 
-        instance = self.manager.deepcopy_instance(0)
-        self.solver.set_instance(instance)
-        for _ in range(self.manager.get_max_num_agents()):
-            instance.add_agent()
-
-            for hzd_type in range(2):
-                if hzd_type == 0:
-                    self.solver.set_hazard_awareness(False)
+            for j in range(2):
+                if not tmp_optimal_socs[j]:
+                    self.optimal_socs[j].append(np.nan)
+                    self.raw_socs[j].append(np.nan)
                 else:
-                    self.solver.set_hazard_awareness(True)
+                    self.optimal_socs[j].append(mean(tmp_optimal_socs[j]))
+                    self.raw_socs[j].append(mean(tmp_raw_socs[j]))
 
-                instance.reset()
-                self.solver.reset()
+                if not tmp_optimal_makespans[j]:
+                    self.optimal_makespans[j].append(np.nan)
+                    self.raw_makespans[j].append(np.nan)
+                else:
+                    self.optimal_makespans[j].append(mean(tmp_optimal_makespans[j]))
+                    self.raw_makespans[j].append(mean(tmp_raw_makespans[j]))
 
-                while not instance.finished():
-                    instance.hazard_step()
-                    self.solver.step()
-
-                if instance.succeeded():
-                    self.socs[hzd_type].append(instance.path_manager.calc_soc() /
-                                               instance.calc_optimal_soc(instance.num_agents))
-                    self.makespans[hzd_type].append(
-                        instance.path_manager.calc_makespan() /
-                        instance.calc_optimal_makespan(instance.num_agents)
-                    )
-                    continue
-
-                # if we failed (we only use successful episodes for soc & makespan)
-                self.socs[hzd_type].append(np.nan)
-                self.makespans[hzd_type].append(np.nan)
+                self.success_rates[j].append(mean(tmp_success_rates[j]))
 
     def save(self) -> None:
         """
         Saves the recorded experiment data to disk.
         """
+        agent_x_axis = list(range(self.agent_size_step, self.max_agents+1, self.agent_size_step))
         data: dict[str, Any] = \
-        {"socs": np.array(self.socs),
-         "makespans": np.array(self.makespans),
+        {"socs": np.array(self.optimal_socs),
+         "raw_socs": np.array(self.raw_socs),
+         "makespans": np.array(self.optimal_makespans),
+         "raw_makespans": np.array(self.raw_makespans),
          "success_rates": np.array(self.success_rates),
-         "agents": np.array(list(range(1, self.manager.get_max_num_agents()+1)))}
+         "agents": np.array(agent_x_axis)}
         filepath = (
-            EXPERIMENT_RESULTS_DIR /
-            f"{self.manager.map_name}_{self.even_or_random}_{self.manager.hazard_name}"
+            EXPERIMENT_DIR / "results" /
+            (f"{self.instance.wall_map.name}" +
+             f"_{self.even_or_random}_({self.instance.hazard.config.name})" +
+             f"_{self.instance.hazard.hzd_type}")
         )
         pickle.dump(data, open(filepath, "wb"))
-
-    def record_all_and_save_data(self) -> None:
-        """
-        Runs all experiments, records the results, and saves them to disk.
-        """
-        self.record_soc_and_makespan()
-        self.record_success_rate()
-        self.save()
-
-if __name__ == "__main__":
-    runner = ExperimentRunner(max_timestep=300,
-                              hazard_config="easy",
-                              wall_map=WallMap("empty-8-8"),
-                              even_or_random="random")
-
-    runner.record_soc_and_makespan()
-    runner.record_success_rate()
-    runner.save()

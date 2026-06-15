@@ -14,13 +14,14 @@ class PIBT:
     Represents a PIBT solver.
     """
     def __init__(self, *,
-                 dim: int,
+                 width: int,
+                 height: int,
                  seed: int) -> None:
         self.instance: MAPFInstance
         self.seed: int = seed
         self.rng = np.random.default_rng(seed)
-        self.occupied_now: Map = Map(dim, dim, "int")
-        self.occupied_next: Map = Map(dim, dim, "int")
+        self.occupied_now: Map = Map(width, height, "int")
+        self.occupied_next: Map = Map(width, height, "int")
         self.consider_hazards: bool = True
         self.agent_idxs: list[int]
 
@@ -50,26 +51,6 @@ class PIBT:
         """
         self.consider_hazards = val
 
-    def get_vertex_cost(self,
-                            i: int,
-                            v: Position,
-                            estimation: float) -> float:
-        """
-        Get cost for a specified agent and vertex.
-
-        Args:
-            i (int): Agent index.
-            v (Position): Specified vertex.
-            estimation (float): Estimation of hazard stuck probability.
-
-        Returns:
-            float: Cost value for the vertex.
-        """
-        # FIRST TECHNIQUE: Hazard-Aware Vertex Priorization
-        return (self.instance.all_dist_tables[i].get(v) +
-                estimation * self.instance.hazard.on_hazard(v) *
-                self.consider_hazards)
-
     def reset(self) -> None:
         """
         Reset solver attributes. Should be used when starting a new episode.
@@ -79,130 +60,115 @@ class PIBT:
         self.reseed(self.seed)
         self.agent_idxs = list(range(self.instance.num_agents))
 
-    def func_pibt(self, q_to: list[Position|None], i: int) -> bool:
+    def func_pibt(self,
+                  q_to: list[Position | None],
+                  i: int,
+                  cost_map: Map) -> bool:
         """
-        Main function of the PIBT algorithm.
-
-        See: https://kei18.github.io/pibt2/
+        Main function of PIBT.
         """
-        a_pos = self.instance.agents[i].current_pos
-        candidates: Positions = [a_pos]
-        candidates.extend(pos for pos in self.instance.wall_map.neighbour_table[a_pos]
-                          if pos is not None)
+        current = self.instance.agents[i].current_pos
 
-        # tie breaker
+        candidates = [current]
+        candidates.extend(
+            p
+            for p in self.instance.wall_map.neighbour_table[current]
+            if p is not None
+        )
+
         self.rng.shuffle(candidates)
 
-        candidates.sort(key=lambda v: self.get_vertex_cost(i, v,
-                                                               self
-                                                               .instance
-                                                               .agents[i]
-                                                               .memory
-                                                               .estimation))
+        candidates.sort(key=lambda u: (self.instance.scene.all_dist_tables[i].get(u) +
+                                       (
+                                           cost_map[u] *
+                                           self.instance.hazard.calculate_increased_dmg(
+                                               self.instance.agents[i].damage
+                                           ) *
+                                           self.instance.hazard.config.base_stuck_prob
+                                       ) * self.consider_hazards))
 
-        for candidate in candidates:
-            # avoid vertex collision
-            if self.occupied_next[candidate] != INVALID_AGENT_ID:
+        for v in candidates:
+            if self.occupied_next[v] != INVALID_AGENT_ID:
                 continue
 
-            j: int = self.occupied_now[candidate]
+            j = self.occupied_now[v]
 
-            # avoid edge collision
-            if j != INVALID_AGENT_ID and q_to[j] == a_pos:
+            if (
+                j != INVALID_AGENT_ID
+                and q_to[j] == current
+            ):
                 continue
 
-            q_to[i] = candidate
-            self.occupied_next[candidate] = i
+            q_to[i] = v
+            self.occupied_next[v] = i
 
-            if (j != INVALID_AGENT_ID and
-                q_to[j] is None and
-                not self.func_pibt(q_to, j)):
+            if (
+                j != INVALID_AGENT_ID
+                and q_to[j] is None
+                and not self.func_pibt(q_to, j, cost_map)
+            ):
                 continue
 
             return True
 
-        # failed to secure node
-        q_to[i] = a_pos
-        self.occupied_next[a_pos] = i
+        q_to[i] = current
+        self.occupied_next[current] = i
+
         return False
 
-    def step(self) -> None:
+    def step(self) -> Positions:
         """
-        Executes one step of the PIBT algorithm.
+        Step through PIBT algorithm.
         """
-        q_to: list[Position|None] = []
-        hazard_prios: list[float] = [0]*self.instance.num_agents
+        next_actions: Positions = []
 
-        # MAIN LOOP BEFORE PIBT ALGORITHM
+        q_to: list[Position | None] = [None] * self.instance.num_agents
+
+        hazard_prios: list[float] = [0] * self.instance.num_agents
+
+        cost_map = self.instance.calc_cost_map()
+
         for i, agent in enumerate(self.instance.agents):
-            agent.decay_freeze()
-            stuck = self.instance.hazard.is_stuck(agent.current_pos)
-            on_hazard = self.instance.hazard.on_hazard(agent.current_pos)
+            self.occupied_now[agent.current_pos] = i
 
-            if on_hazard:
-                agent.memory.potential_stucks += 1
-                agent.increase_damage()
-
-            if stuck:
-                agent.memory.observed_stucks += 1
-                agent.freeze()
-
-            if agent.frozen() or stuck:
-                q_to.append(agent.current_pos)
+            if agent.frozen():
+                q_to[i] = agent.current_pos
                 self.occupied_next[agent.current_pos] = i
-            else:
-                q_to.append(None)
 
-            estimation: float = agent.memory.estimation
+            hazard_prios[i] = (cost_map[agent.current_pos] *
+                               self.instance.hazard.calculate_increased_dmg(
+                                   self.instance.agents[i].damage
+                               ) *
+                               self.instance.hazard.config.base_stuck_prob)
 
-            if on_hazard:
-                # SECOND TECHNIQUE: Hazard-Aware Agent Prioritization
-                # increase priority of agents on or near hazards
-                hazard_prios[i] += estimation
-
-            for neighbour in self.instance.wall_map.neighbour_table[agent.current_pos]:
-                if neighbour is None:
-                    continue
-
-                if self.instance.hazard.on_hazard(neighbour):
-                    # more dangerous to be on a hazard
-                    # then near a hazard
-                    hazard_prios[i] += estimation / 4
-
-                # THIRD TECHNIQUE: Hazard Parameter Estimation
-                # agents remember how often they got stuck and
-                # share that information with other agents
-                neighbour_index: int = self.occupied_now[neighbour]
-                if neighbour_index != INVALID_AGENT_ID:
-                    self.instance.agents[neighbour_index] \
-                    .memory.update_shared_estimation(i, estimation)
-
-        self.agent_idxs.sort(key=lambda i: self.instance.agents[i].current_priority +
-                                           hazard_prios[i] * self.consider_hazards,
-                             reverse=True)
+        self.agent_idxs.sort(
+            key=lambda i: (self.instance.agents[i].current_priority +
+                           hazard_prios[i] * self.consider_hazards),
+            reverse=True
+        )
 
         for i in self.agent_idxs:
             if q_to[i] is None:
-                self.func_pibt(q_to, i)
+                self.func_pibt(q_to, i, cost_map)
 
-        # cleanup and goal checking
-        for i, a in enumerate(self.instance.agents):
-            self.occupied_now[a.current_pos] = INVALID_AGENT_ID
-
+        for i, agent in enumerate(self.instance.agents):
             next_pos = q_to[i]
-
-            # for type checker
             assert next_pos is not None
 
-            self.occupied_now[next_pos] = i
+            self.occupied_now[agent.current_pos] = INVALID_AGENT_ID
             self.occupied_next[next_pos] = INVALID_AGENT_ID
 
-            if next_pos != a.goal_pos:
-                a.current_priority += 1
-            else:
-                a.current_priority -= np.floor(a.current_priority)
-            action = next_pos - a.current_pos
-            self.instance.agents[i].move(action)
+            action = next_pos - agent.current_pos
+
+            next_actions.append(action)
+
+            self.occupied_now[next_pos] = i
+
             self.instance.path_manager.append_action_to_path(i, action)
 
-        self.instance.progress()
+            if next_pos != agent.goal_pos:
+                agent.current_priority += 1
+            else:
+                agent.current_priority -= np.floor(agent.current_priority)
+
+        return next_actions
