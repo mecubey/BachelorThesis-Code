@@ -9,3 +9,6 @@ include/
 .vscode/
 share/
 Scripts/
+experiments/
+maps/
+scenarios/
