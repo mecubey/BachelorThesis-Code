@@ -57,6 +57,10 @@ test:
   baseStuckProb: 1
   growthTime: 3
   stableTime: 3
-  dirSpreadProbs: [0.5, 0.6, 0.3, 0.8]
+  dirSpreadProbs: [0.8, 0.8, 0.8, 0.8]
   damage_increase: 1
   damage_decrease: 0.3
+  add_damage_increase: 1.4
+  add_damage_decrease: 0.4
+  mult_damage_increase: 0.4
+  mult_damage_decrease: 0.09
